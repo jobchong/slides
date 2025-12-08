@@ -1,0 +1,30 @@
+{
+  "name": "slides-monolith",
+  "version": "0.0.1",
+  "type": "module",
+  "packageManager": "bun@1.1.36",
+  "scripts": {
+    "dev": "concurrently \"bun run dev:server\" \"bun run dev:client\"",
+    "dev:server": "bun run server/server.ts",
+    "dev:client": "bunx vite dev --config app/vite.config.ts",
+    "build:client": "bunx vite build --config app/vite.config.ts",
+    "preview": "bunx vite preview --config app/vite.config.ts",
+    "typecheck:client": "bunx tsc -p app/tsconfig.json --noEmit",
+    "typecheck:server": "bunx tsc -p server/tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.671.0",
+    "@aws-sdk/s3-request-presigner": "^3.671.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "bun-types": "^1.1.36",
+    "concurrently": "^9.1.0",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.3"
+  }
+}
