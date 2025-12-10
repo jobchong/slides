@@ -5,7 +5,7 @@
   "packageManager": "bun@1.1.36",
   "scripts": {
     "dev": "concurrently \"bun run dev:server\" \"bun run dev:client\"",
-    "dev:server": "bun run server/server.ts",
+    "dev:server": "bun --watch server/server.ts",
     "dev:client": "bunx vite dev --config app/vite.config.ts",
     "build:client": "bunx vite build --config app/vite.config.ts",
     "preview": "bunx vite preview --config app/vite.config.ts",

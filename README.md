@@ -12,7 +12,7 @@ Single repo with the chat-driven slide builder and the image upload service unde
 bun install
 VITE_ANTHROPIC_API_KEY=... VITE_UPLOAD_API_URL=http://localhost:4000 bun run dev
 # or separately:
-# bun run dev:server
+# bun run dev:server   # bun --watch server/server.ts (auto-reloads on changes)
 # VITE_ANTHROPIC_API_KEY=... VITE_UPLOAD_API_URL=http://localhost:4000 bun run dev:client
 ```
 

@@ -6,16 +6,28 @@ import {
   GetObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { transcribeAudio } from "./groq";
+import { generateSlide } from "./claude";
 
 const port = Number(process.env.PORT || 4000);
 const uploadDir = process.env.UPLOAD_DIR || join(import.meta.dir, "uploads");
 const maxUploadBytes =
   Number(process.env.MAX_UPLOAD_BYTES) || 5 * 1024 * 1024; // 5 MB default
+const maxAudioBytes = 25 * 1024 * 1024; // 25 MB for audio (Groq limit)
 const allowedTypes = new Set([
   "image/jpeg",
   "image/png",
   "image/webp",
   "image/gif",
+]);
+const allowedAudioTypes = new Set([
+  "audio/webm",
+  "audio/webm;codecs=opus",
+  "video/webm", // MediaRecorder sometimes uses video/webm for audio-only
+  "audio/mp4",
+  "audio/mpeg",
+  "audio/wav",
+  "audio/ogg",
 ]);
 const s3Bucket = process.env.S3_BUCKET;
 const s3Region = process.env.S3_REGION || "us-east-1";
@@ -79,7 +91,7 @@ async function saveFile(
 
   if (s3Client) {
     const key = `uploads/${filename}`;
-    const body = await file.arrayBuffer();
+    const body = new Uint8Array(await file.arrayBuffer());
     await s3Client.send(
       new PutObjectCommand({
         Bucket: s3Bucket,
@@ -151,6 +163,73 @@ const server = Bun.serve({
           201
         )
       );
+    }
+
+    if (url.pathname === "/api/voice-message" && req.method === "POST") {
+      try {
+        const form = await req.formData();
+        const audioFile = form.get("audio");
+        const messagesJson = form.get("messages");
+        const currentHtml = form.get("currentHtml") as string || "";
+
+        if (!(audioFile instanceof File)) {
+          return withCors(jsonResponse({ error: "Missing audio file field named 'audio'." }, 400));
+        }
+
+        console.log(`Received audio: ${audioFile.type} (${audioFile.size} bytes, name: ${audioFile.name})`);
+
+        if (!allowedAudioTypes.has(audioFile.type)) {
+          return withCors(jsonResponse({ error: `Unsupported audio type ${audioFile.type}. Allowed types: ${Array.from(allowedAudioTypes).join(", ")}` }, 400));
+        }
+
+        if (audioFile.size > maxAudioBytes) {
+          return withCors(
+            jsonResponse({ error: `Audio file too large (max ${maxAudioBytes} bytes)` }, 400)
+          );
+        }
+
+        if (!messagesJson || typeof messagesJson !== "string") {
+          return withCors(jsonResponse({ error: "Missing or invalid messages field." }, 400));
+        }
+
+        let messages;
+        try {
+          messages = JSON.parse(messagesJson);
+        } catch (e) {
+          return withCors(jsonResponse({ error: "Invalid JSON in messages field." }, 400));
+        }
+
+        // Transcribe audio with Groq Whisper
+        const transcription = await transcribeAudio(audioFile);
+
+        if (!transcription) {
+          return withCors(jsonResponse({ error: "Failed to transcribe audio." }, 500));
+        }
+
+        // Add transcription as a user message
+        const updatedMessages = [
+          ...messages,
+          { role: "user", content: transcription },
+        ];
+
+        // Generate slide with Claude
+        const slideHtml = await generateSlide(updatedMessages, currentHtml);
+
+        return withCors(
+          jsonResponse({
+            html: slideHtml,
+            transcription,
+          })
+        );
+      } catch (error) {
+        console.error("Voice message error:", error);
+        return withCors(
+          jsonResponse(
+            { error: error instanceof Error ? error.message : "Unknown error" },
+            500
+          )
+        );
+      }
     }
 
     if (url.pathname.startsWith("/images/") && req.method === "GET") {

@@ -1,4 +1,7 @@
-import type { Message } from "./types";
+interface Message {
+  role: "user" | "assistant";
+  content: string;
+}
 
 const SYSTEM_PROMPT = `You are a slide design assistant. You output HTML that will be rendered inside a 16:9 slide container.
 
@@ -45,13 +48,13 @@ Colors:
 - Maintain all existing elements unless told to remove them
 - No markdown, no code fences, no explanations - just HTML`;
 
-export async function callClaude(
+export async function generateSlide(
   messages: Message[],
   currentHtml: string
 ): Promise<string> {
-  const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    throw new Error("VITE_ANTHROPIC_API_KEY not set");
+    throw new Error("ANTHROPIC_API_KEY not set");
   }
 
   // Build messages with current HTML state
@@ -71,10 +74,9 @@ export async function callClaude(
       "Content-Type": "application/json",
       "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-5-20250929",
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       messages: claudeMessages,
@@ -83,7 +85,7 @@ export async function callClaude(
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`API error: ${error}`);
+    throw new Error(`Claude API error: ${error}`);
   }
 
   const data = await response.json();
@@ -91,41 +93,4 @@ export async function callClaude(
   // Extract text content
   const textBlock = data.content.find((block: { type: string }) => block.type === "text");
   return textBlock?.text ?? "";
-}
-
-export async function sendVoiceMessage(
-  audioBlob: Blob,
-  messages: Message[],
-  currentHtml: string
-): Promise<{ html: string; transcription: string }> {
-  const serverUrl = import.meta.env.VITE_SERVER_URL || "http://localhost:4000";
-
-  // Determine file extension based on MIME type
-  let filename = "recording.webm";
-  if (audioBlob.type.includes("mp4")) {
-    filename = "recording.mp4";
-  } else if (audioBlob.type.includes("ogg")) {
-    filename = "recording.ogg";
-  } else if (audioBlob.type.includes("wav")) {
-    filename = "recording.wav";
-  }
-
-  console.log(`Sending audio: ${audioBlob.type} (${audioBlob.size} bytes) as ${filename}`);
-
-  const formData = new FormData();
-  formData.append("audio", audioBlob, filename);
-  formData.append("messages", JSON.stringify(messages));
-  formData.append("currentHtml", currentHtml);
-
-  const response = await fetch(`${serverUrl}/api/voice-message`, {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || "Failed to process voice message");
-  }
-
-  return await response.json();
 }

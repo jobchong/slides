@@ -10,11 +10,6 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleUploadComplete = (url: string) => {
-    const note = `Uploaded image available at: ${url}`;
-    setMessages((prev) => [...prev, { role: "user", content: note }]);
-  };
-
   const handleSend = async (userMessage: string) => {
     const newMessages: Message[] = [
       ...messages,
@@ -38,6 +33,15 @@ export default function App() {
     }
   };
 
+  const handleVoiceMessage = (transcription: string, html: string) => {
+    setMessages([
+      ...messages,
+      { role: "user", content: transcription },
+      { role: "assistant", content: "Done." },
+    ]);
+    setSlideHtml(html);
+  };
+
   return (
     <div className="app">
       <div className="app-slide-container">
@@ -46,9 +50,10 @@ export default function App() {
       <div className="app-chat">
         <ChatInput
           messages={messages}
+          slideHtml={slideHtml}
           onSend={handleSend}
+          onVoiceMessage={handleVoiceMessage}
           isLoading={isLoading}
-          onUploadComplete={handleUploadComplete}
         />
       </div>
     </div>
