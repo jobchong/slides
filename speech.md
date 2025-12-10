@@ -27,7 +27,7 @@ This document outlines the design decisions and implementation details for addin
 ```
 User clicks mic → Records audio (MediaRecorder) → User clicks stop →
 Upload audio blob → Groq Whisper transcription →
-Send transcription to Claude → Return slide HTML
+Send transcription to the selected model → Return slide HTML
 ```
 
 ### 2. User Interface Design
@@ -71,7 +71,7 @@ Send transcription to Claude → Return slide HTML
 6. Audio is immediately sent to backend:
    - "Uploading audio..." shown briefly
    - "Transcribing and generating..." while processing
-7. Server transcribes with Whisper and generates slide with Claude
+7. Server transcribes with Whisper and generates slide with the chosen model
 8. UI returns to normal state with new slide displayed
 
 **Features:**
@@ -155,7 +155,7 @@ type RecordingState = "idle" | "recording" | "uploading" | "processing" | "error
 2. Sent to our backend via HTTPS
 3. Backend forwards to Groq Whisper API
 4. Transcription returned, audio discarded
-5. Transcription sent to Claude
+5. Transcription sent to the selected model
 6. Only slide HTML returned to client
 
 **Browser Permission Model:**

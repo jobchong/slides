@@ -2,13 +2,18 @@ import { useState } from "react";
 import type { Message } from "./types";
 import { SlideView } from "./components/SlideView";
 import { ChatInput } from "./components/ChatInput";
-import { callClaude } from "./api";
+import { callModel } from "./api";
+import { MODEL_OPTIONS } from "./models";
 import "./App.css";
 
 export default function App() {
   const [slideHtml, setSlideHtml] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const initialModel =
+    import.meta.env.VITE_DEFAULT_MODEL || MODEL_OPTIONS[0].value;
+  const [model, setModel] = useState(initialModel);
 
   const handleSend = async (userMessage: string) => {
     const newMessages: Message[] = [
@@ -17,17 +22,15 @@ export default function App() {
     ];
     setMessages(newMessages);
     setIsLoading(true);
+    setError(null);
 
     try {
-      const html = await callClaude(newMessages, slideHtml);
+      const html = await callModel(newMessages, slideHtml, model);
       setSlideHtml(html);
       setMessages([...newMessages, { role: "assistant", content: "Done." }]);
-    } catch (error) {
-      console.error("Error calling Claude:", error);
-      setMessages([
-        ...newMessages,
-        { role: "assistant", content: `Error: ${error instanceof Error ? error.message : "Unknown error"}` },
-      ]);
+    } catch (err) {
+      console.error("Error calling model:", err);
+      setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setIsLoading(false);
     }
@@ -54,6 +57,10 @@ export default function App() {
           onSend={handleSend}
           onVoiceMessage={handleVoiceMessage}
           isLoading={isLoading}
+          model={model}
+          onModelChange={setModel}
+          error={error}
+          onErrorDismiss={() => setError(null)}
         />
       </div>
     </div>

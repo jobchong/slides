@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import type { ChangeEvent } from "react";
 import type { Message } from "../types";
 import { uploadImage } from "../uploads";
 import { useAudioRecorder } from "../hooks/useAudioRecorder";
 import { sendVoiceMessage } from "../api";
+import { MODEL_OPTIONS } from "../models";
 import "./ChatInput.css";
 
 interface ChatInputProps {
@@ -12,6 +13,10 @@ interface ChatInputProps {
   onSend: (message: string) => void;
   onVoiceMessage: (transcription: string, html: string) => void;
   isLoading: boolean;
+  model: string;
+  onModelChange: (model: string) => void;
+  error: string | null;
+  onErrorDismiss: () => void;
 }
 
 type UploadStatus = "idle" | "uploading" | "done" | "error";
@@ -30,6 +35,10 @@ export function ChatInput({
   onSend,
   onVoiceMessage,
   isLoading,
+  model,
+  onModelChange,
+  error,
+  onErrorDismiss,
 }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [isExpanded, setIsExpanded] = useState(false);
@@ -42,6 +51,7 @@ export function ChatInput({
   const hasAttachedImages = completedUploads.length > 0;
   const isSendDisabled = isLoading || hasPendingUpload || (input.trim().length === 0 && !hasAttachedImages);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textInputRef = useRef<HTMLInputElement>(null);
 
   const {
     recordingState,
@@ -54,6 +64,20 @@ export function ChatInput({
     setRecordingState,
     setError: setAudioError,
   } = useAudioRecorder();
+
+  const modelOptions = useMemo(() => {
+    if (MODEL_OPTIONS.some((option) => option.value === model)) {
+      return MODEL_OPTIONS;
+    }
+    return [
+      ...MODEL_OPTIONS,
+      {
+        value: model,
+        label: model,
+        provider: model.startsWith("gpt") ? "openai" : "anthropic",
+      },
+    ];
+  }, [model]);
 
   useEffect(() => {
     if (historyRef.current && isExpanded) {
@@ -171,7 +195,12 @@ export function ChatInput({
       setRecordingState("uploading");
       setAudioError(null);
 
-      const { html, transcription } = await sendVoiceMessage(audioBlob, messages, slideHtml);
+      const { html, transcription } = await sendVoiceMessage(
+        audioBlob,
+        messages,
+        slideHtml,
+        model
+      );
 
       setRecordingState("processing");
       onVoiceMessage(transcription, html);
@@ -190,6 +219,11 @@ export function ChatInput({
     setRecordingState("idle");
     setAudioError(null);
   };
+
+  // Keep the text input focused on mount for quicker typing.
+  useEffect(() => {
+    textInputRef.current?.focus();
+  }, []);
 
   // Handle ESC key to cancel recording
   useEffect(() => {
@@ -279,42 +313,57 @@ export function ChatInput({
                   placeholder={messages.length === 0 ? "Describe your slide..." : "Continue editing..."}
                   disabled={isLoading}
                   className="chat-input"
+                  ref={textInputRef}
                 />
               </div>
             )}
 
             <div className="chat-actions">
               <div className="chat-actions-left">
-                {recordingState !== "recording" && (
-                  <div className="chat-upload-wrapper" ref={uploadMenuRef}>
-                    <button
-                      type="button"
-                      className={`chat-upload-toggle ${isUploadMenuOpen ? "chat-upload-toggle--open" : ""}`}
-                      onClick={() => setIsUploadMenuOpen((prev) => !prev)}
-                      aria-haspopup="menu"
-                      aria-expanded={isUploadMenuOpen}
-                      aria-label="Add attachment"
-                      disabled={isLoading}
-                    >
-                      <span className="chat-upload-plus" aria-hidden="true">
-                        +
-                      </span>
-                    </button>
-                    {isUploadMenuOpen && (
-                      <div className="chat-upload-menu" role="menu">
-                        <button
-                          type="button"
-                          className="chat-upload-menu-item"
-                          role="menuitem"
-                          onClick={handleUploadOption}
-                        >
-                          Upload image
-                        </button>
-                        <div className="chat-upload-menu-note">More formats soon</div>
-                      </div>
-                    )}
-                  </div>
-                )}
+                <div className="chat-actions-row">
+                  {recordingState !== "recording" && (
+                    <div className="chat-upload-wrapper" ref={uploadMenuRef}>
+                      <button
+                        type="button"
+                        className={`chat-upload-toggle ${isUploadMenuOpen ? "chat-upload-toggle--open" : ""}`}
+                        onClick={() => setIsUploadMenuOpen((prev) => !prev)}
+                        aria-haspopup="menu"
+                        aria-expanded={isUploadMenuOpen}
+                        aria-label="Add attachment"
+                        disabled={isLoading}
+                      >
+                        <span className="chat-upload-plus" aria-hidden="true">
+                          +
+                        </span>
+                      </button>
+                      {isUploadMenuOpen && (
+                        <div className="chat-upload-menu" role="menu">
+                          <button
+                            type="button"
+                            className="chat-upload-menu-item"
+                            role="menuitem"
+                            onClick={handleUploadOption}
+                          >
+                            Upload image
+                          </button>
+                          <div className="chat-upload-menu-note">More formats soon</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <select
+                    className="chat-model-select"
+                    value={model}
+                    onChange={(e) => onModelChange(e.target.value)}
+                    disabled={isLoading}
+                  >
+                    {modelOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 {recordingState === "recording" && (
                   <button
                     type="button"
@@ -390,6 +439,18 @@ export function ChatInput({
               setRecordingState("idle");
               setAudioError(null);
             }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+      {error && (
+        <div className="chat-generate-error">
+          <span>{error}</span>
+          <button
+            type="button"
+            className="chat-error-dismiss"
+            onClick={onErrorDismiss}
           >
             Dismiss
           </button>

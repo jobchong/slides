@@ -44,15 +44,15 @@ Example of expected slide HTML from the model:
   - Example markup and a reminder to return the **complete slide HTML** every time.
 - **Images**: Use `<img>` with user-provided URLs; include explicit `width`/`height` and `object-fit: cover` (or `contain` if requested) plus `position: absolute` with percentage anchoring. If the user asks for an image without providing a URL, ask for one; do not generate SVG or inline data URIs.
 - **Message shaping**: The latest user turn includes the full current slide HTML (if any) plus the new request to keep the model stateful without tool use.
-- **API call**: POST to `https://api.anthropic.com/v1/messages` with model `claude-sonnet-4-20250514`, `max_tokens: 4096`, and headers `anthropic-version: 2023-06-01` and `anthropic-dangerous-direct-browser-access: true`.
-- **Env**: Requires `VITE_ANTHROPIC_API_KEY`. Request failure surfaces an error message in the chat stream.
+- **API call**: `callModel` routes to Anthropics or OpenAI based on the `model` string (`claude*` → Anthropics; `gpt*` → OpenAI). Uses the same prompt and message shaping for both providers.
+- **Env**: Prefers `VITE_MODEL_API_KEY`, falling back to provider-specific keys (`VITE_ANTHROPIC_API_KEY`, `VITE_OPENAI_API_KEY`). Request failure surfaces an error message in the chat stream.
 
 ---
 
 ## 4. User Interaction Flow
 
 1. User types in `ChatInput`. On submit, the message is appended to `messages` and `isLoading` is set.
-2. `callClaude` returns full slide HTML, which replaces `slideHtml`. A synthetic assistant message `"Done."` is appended for confirmation.
+2. `callModel` returns full slide HTML, which replaces `slideHtml`. A synthetic assistant message `"Done."` is appended for confirmation.
 3. On error, the assistant message includes the error string; spinner is cleared via `finally`.
 4. Chat history can be toggled open/closed; when open it pins above the input and autoscrolls to the latest message.
 
@@ -65,9 +65,9 @@ User text
   ↓
 App state update (messages + loading)
   ↓
-callClaude(messages, slideHtml)
+callModel(messages, slideHtml, model)
   ↓
-Anthropic API with full current HTML inlined into the last user turn
+LLM API (provider inferred from model) with full current HTML inlined into the last user turn
   ↓
 Model returns complete HTML for the slide
   ↓
@@ -85,8 +85,8 @@ SlideView renders HTML + optional loading overlay
 | Build | Vite + TypeScript | `npm run dev/build/preview` |
 | Frontend | React 18 | Minimal hooks-only state |
 | Styling | Plain CSS files | No design system or CSS-in-JS |
-| LLM | Anthropic Messages API | Model `claude-sonnet-4-20250514`, HTML-only responses |
-| Backend | None | All client-side calls to Anthropic |
+| LLM | Anthropic Messages API / OpenAI Chat Completions | Model selected in UI; HTML-only responses |
+| Backend | None | All client-side calls to the LLM; image uploads proxied via Bun server |
 
 ---
 
