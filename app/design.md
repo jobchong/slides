@@ -4,7 +4,7 @@
 
 1. **HTML-native**: The model outputs real HTML with inline CSS that drops straight into the slide container.
 2. **Whole-slide updates**: The LLM returns the full slide markup on every turn; no partial diffs or tool calls.
-3. **Minimal surface area**: Simple React state, no backend beyond the LLM call, and no custom DSL.
+3. **Minimal surface area**: Simple React state with a thin Bun model service (uploads + LLM + voice), and no custom DSL.
 4. **Conversation-first**: The user edits via chat; any ambiguity is resolved through the conversation, not UI controls.
 
 ---
@@ -86,7 +86,7 @@ SlideView renders HTML + optional loading overlay
 | Frontend | React 18 | Minimal hooks-only state |
 | Styling | Plain CSS files | No design system or CSS-in-JS |
 | LLM | Anthropic Messages API / OpenAI Chat Completions | Model selected in UI; HTML-only responses |
-| Backend | None | All client-side calls to the LLM; image uploads proxied via Bun server |
+| Backend | Bun model service | Handles LLM calls, uploads, and voice transcription |
 
 ---
 
@@ -105,7 +105,7 @@ SlideView renders HTML + optional loading overlay
 Goal: let users attach an image file and place it on the slide without changing the HTML-only rendering.
 
 Current flow:
-- **Upload flow**: `+` button opens a file picker (jpg/png/webp/gif) → POSTs to the image service (`VITE_UPLOAD_API_URL`, Bun/S3-backed) → receive a public URL.
+- **Upload flow**: `+` button opens a file picker (jpg/png/webp/gif) → POSTs to the model service (`VITE_MODEL_SERVICE_URL`, falls back to `VITE_UPLOAD_API_URL`, Bun/S3-backed) → receive a public URL.
 - **LLM prompt shape**: When an upload completes, a user message is auto-appended: `Uploaded image available at: <url>`. The LLM continues to emit `<img>` tags using that URL, with `width/height`, `object-fit`, and absolute positioning.
 - **UI affordance**: Upload list shows per-file status; Send is disabled while an upload is in flight to ensure the URL reaches the next turn.
 - **Safety**: Client trusts server validation (type/size). Server rejects unsupported MIME types and large files.

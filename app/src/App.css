@@ -1,29 +1,39 @@
 .app {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   min-height: 100vh;
   height: 100vh;
+  position: relative;
+}
+
+.app-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   padding: 24px;
   padding-bottom: 150px;
-  position: relative;
+  min-width: 0;
 }
 
 .app-slide-container {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex: 1;
   min-height: 420px;
   min-width: 0;
-  height: calc(100vh - 150px - 48px);
 }
 
 .app-chat {
   position: fixed;
   bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(800px, calc(100% - 48px));
-  pointer-events: none;
+  left: 180px;
+  right: 0;
   display: flex;
   justify-content: center;
+  pointer-events: none;
+}
+
+.app-chat > * {
+  width: min(800px, calc(100% - 48px));
 }

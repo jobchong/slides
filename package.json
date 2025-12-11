@@ -16,6 +16,7 @@
     "@anthropic-ai/sdk": "^0.36.3",
     "@aws-sdk/client-s3": "^3.671.0",
     "@aws-sdk/s3-request-presigner": "^3.671.0",
+    "@google/genai": "^1.32.0",
     "openai": "^4.78.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

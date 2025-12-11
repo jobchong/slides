@@ -1,0 +1,37 @@
+.thumbnail-panel {
+  display: flex;
+  flex-direction: column;
+  width: 180px;
+  height: 100%;
+  background: var(--panel-bg);
+  border-right: 1px solid var(--panel-border);
+  padding: 16px;
+  gap: 16px;
+}
+
+.thumbnail-panel-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.thumbnail-panel-add {
+  padding: 10px 16px;
+  border: 1px dashed var(--panel-border-strong);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted-strong);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.thumbnail-panel-add:hover {
+  background: var(--panel-bg-secondary);
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}

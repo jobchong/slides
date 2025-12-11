@@ -344,6 +344,24 @@
   border-radius: 8px;
   padding: 6px 10px;
   font-size: 14px;
+  cursor: pointer;
+  transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
+  outline: none;
+}
+
+.chat-model-select:hover:not(:disabled) {
+  border-color: var(--panel-border-strong);
+  box-shadow: 0 4px 12px rgba(47, 42, 36, 0.1);
+}
+
+.chat-model-select:focus:not(:disabled) {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(100, 140, 90, 0.15);
+}
+
+.chat-model-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .chat-upload-menu {

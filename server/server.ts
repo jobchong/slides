@@ -312,4 +312,4 @@ const server = Bun.serve({
   },
 });
 
-console.log(`Image service listening on ${server.url}`);
+console.log(`Model service listening on ${server.url}`);

@@ -1,4 +1,4 @@
-export type Provider = "anthropic" | "openai";
+export type Provider = "anthropic" | "openai" | "google";
 
 export interface ModelOption {
   value: string;
@@ -8,23 +8,18 @@ export interface ModelOption {
 
 export const MODEL_OPTIONS: ModelOption[] = [
   {
-    value: "claude-sonnet-4-20250514",
-    label: "Claude Sonnet 4",
+    value: "claude-haiku-4-5-20251001",
+    label: "Claude Haiku 4.5",
     provider: "anthropic",
   },
   {
-    value: "claude-sonnet-4-5-20250929",
-    label: "Claude Sonnet 4.5",
-    provider: "anthropic",
-  },
-  {
-    value: "gpt-5.1-chat-latest",
-    label: "GPT-5.1",
+    value: "gpt-4.1-mini",
+    label: "GPT-4.1 Mini",
     provider: "openai",
   },
   {
-    value: "gpt-5.1-mini",
-    label: "GPT-5.1 Mini",
-    provider: "openai",
+    value: "models/gemini-2.5-flash",
+    label: "Gemini 2.5 Flash",
+    provider: "google",
   },
 ];

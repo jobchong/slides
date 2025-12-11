@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
+import { GoogleGenAI } from "@google/genai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 
 interface Message {
@@ -7,12 +8,12 @@ interface Message {
   content: string;
 }
 
-type Provider = "anthropic" | "openai";
+type Provider = "anthropic" | "openai" | "google";
 
 const DEFAULT_MODEL =
   process.env.DEFAULT_MODEL ||
   process.env.VITE_DEFAULT_MODEL ||
-  "claude-sonnet-4-5-20250929";
+  "claude-haiku-4-5-20251015";
 
 const MAX_GENERATION_TOKENS = 4096;
 
@@ -79,7 +80,8 @@ function withStateContext(
 function inferProvider(model: string): Provider {
   if (model.startsWith("claude")) return "anthropic";
   if (model.startsWith("gpt")) return "openai";
-  throw new Error(`Unsupported model "${model}". Expected claude* or gpt*.`);
+  if (model.startsWith("models/gemini")) return "google";
+  throw new Error(`Unsupported model "${model}". Expected claude*, gpt*, or gemini*.`);
 }
 
 function resolveApiKey(provider: Provider) {
@@ -91,14 +93,25 @@ function resolveApiKey(provider: Provider) {
       process.env.VITE_ANTHROPIC_API_KEY
     );
   }
+  if (provider === "google") {
+    return (
+      genericKey ||
+      process.env.GOOGLE_API_KEY ||
+      process.env.VITE_GOOGLE_API_KEY
+    );
+  }
   return genericKey || process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
 }
 
 function requireApiKey(provider: Provider): string {
   const key = resolveApiKey(provider);
   if (!key) {
-    const providerLabel = provider === "anthropic" ? "ANTHROPIC" : "OPENAI";
-    throw new Error(`MODEL_API_KEY (or ${providerLabel}_API_KEY) not set`);
+    const providerLabels: Record<Provider, string> = {
+      anthropic: "ANTHROPIC",
+      openai: "OPENAI",
+      google: "GOOGLE",
+    };
+    throw new Error(`MODEL_API_KEY (or ${providerLabels[provider]}_API_KEY) not set`);
   }
   return key;
 }
@@ -117,6 +130,14 @@ function getOpenAIClient(): OpenAI {
     openAIClient = new OpenAI({ apiKey: requireApiKey("openai") });
   }
   return openAIClient;
+}
+
+let googleClient: GoogleGenAI | null = null;
+function getGoogleClient(): GoogleGenAI {
+  if (!googleClient) {
+    googleClient = new GoogleGenAI({ apiKey: requireApiKey("google") });
+  }
+  return googleClient;
 }
 
 function buildOpenAIMessages(messages: Message[]): ChatCompletionMessageParam[] {
@@ -178,6 +199,29 @@ async function callOpenAI(
   return flattenOpenAIContent(response.choices?.[0]?.message?.content);
 }
 
+async function callGoogle(
+  model: string,
+  messages: Message[],
+  currentHtml: string
+): Promise<string> {
+  const contextMessages = withStateContext(messages, currentHtml);
+  const contents = contextMessages.map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: m.content }],
+  }));
+
+  const response = await getGoogleClient().models.generateContent({
+    model,
+    contents,
+    config: {
+      systemInstruction: SYSTEM_PROMPT,
+      maxOutputTokens: MAX_GENERATION_TOKENS,
+    },
+  });
+
+  return response.text ?? "";
+}
+
 export async function generateSlide(
   messages: Message[],
   currentHtml: string,
@@ -186,6 +230,9 @@ export async function generateSlide(
   const provider = inferProvider(model);
   if (provider === "anthropic") {
     return callAnthropic(model, messages, currentHtml);
+  }
+  if (provider === "google") {
+    return callGoogle(model, messages, currentHtml);
   }
   return callOpenAI(model, messages, currentHtml);
 }

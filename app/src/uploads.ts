@@ -1,5 +1,7 @@
-const baseUrl =
-  import.meta.env.VITE_UPLOAD_API_URL || "http://localhost:4000";
+const modelServiceUrl =
+  import.meta.env.VITE_MODEL_SERVICE_URL ||
+  import.meta.env.VITE_UPLOAD_API_URL ||
+  "http://localhost:4000";
 
 interface UploadResponse {
   url: string;
@@ -12,7 +14,7 @@ export async function uploadImage(file: File): Promise<UploadResponse> {
   const form = new FormData();
   form.append("file", file);
 
-  const response = await fetch(`${baseUrl}/upload`, {
+  const response = await fetch(`${modelServiceUrl}/upload`, {
     method: "POST",
     body: form,
   });
