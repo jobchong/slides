@@ -8,6 +8,7 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { transcribeAudio } from "./groq";
 import { generateSlide, getDefaultModel } from "./llm";
+import { logError, logInfo, logWarn, preview } from "./logger";
 
 const port = Number(process.env.PORT || 4000);
 const uploadDir = process.env.UPLOAD_DIR || join(import.meta.dir, "uploads");
@@ -75,6 +76,9 @@ function jsonResponse(body: unknown, status = 200) {
 
 async function handleRequest(req: Request): Promise<Response> {
   const url = new URL(req.url);
+  if (!isAssetOrHtmlRequest(url.pathname)) {
+    logInfo("Incoming request", { method: req.method, path: url.pathname });
+  }
 
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204 });
@@ -109,18 +113,43 @@ async function handleUpload(req: Request): Promise<Response> {
   const file = form.get("file");
 
   if (!(file instanceof File)) {
+    logWarn("Upload missing file field named 'file'.", {
+      providedFields: Array.from(form.keys()),
+    });
     return jsonResponse({ error: "Missing file field named 'file'." }, 400);
   }
 
   if (!allowedTypes.has(file.type)) {
+    logWarn("Upload rejected due to unsupported type.", {
+      type: file.type,
+      name: file.name,
+    });
     return jsonResponse({ error: `Unsupported type ${file.type}` }, 400);
   }
 
   if (file.size > maxUploadBytes) {
+    logWarn("Upload rejected due to size limit.", {
+      size: file.size,
+      maxUploadBytes,
+      name: file.name,
+    });
     return jsonResponse({ error: `File too large (max ${maxUploadBytes} bytes)` }, 400);
   }
 
+  logInfo("Upload request accepted", {
+    name: file.name,
+    type: file.type,
+    size: file.size,
+    storage: s3Client ? "s3" : "disk",
+  });
+
   const { url: publicUrl, filename } = await saveFile(req, file);
+  logInfo("Upload stored successfully", {
+    filename,
+    publicUrl,
+    size: file.size,
+    type: file.type,
+  });
   return jsonResponse(
     {
       url: publicUrl,
@@ -133,11 +162,15 @@ async function handleUpload(req: Request): Promise<Response> {
 }
 
 async function handleGenerate(req: Request): Promise<Response> {
+  const start = Date.now();
   try {
     const body = await req.json();
     const { messages, currentHtml = "", model } = body || {};
 
     if (!Array.isArray(messages)) {
+      logWarn("Generate request rejected: messages must be an array.", {
+        receivedType: typeof messages,
+      });
       return jsonResponse({ error: "messages must be an array" }, 400);
     }
 
@@ -147,10 +180,27 @@ async function handleGenerate(req: Request): Promise<Response> {
       process.env.VITE_DEFAULT_MODEL ||
       getDefaultModel();
 
+    logInfo("Generate request received", {
+      model: selectedModel,
+      messagesCount: messages.length,
+      lastMessagePreview: preview(messages[messages.length - 1]?.content),
+      currentHtmlLength: currentHtml.length,
+    });
+
     const html = await generateSlide(messages, currentHtml, selectedModel);
+    const durationMs = Date.now() - start;
+    logInfo("Generate response produced", {
+      model: selectedModel,
+      htmlLength: html?.length ?? 0,
+      htmlPreview: preview(html),
+      durationMs,
+    });
     return jsonResponse({ html });
   } catch (error) {
-    console.error("Generate error:", error);
+    logError("Generate handler failed.", {
+      error: error instanceof Error ? error.message : "Unknown error",
+      durationMs: Date.now() - start,
+    });
     return jsonResponse(
       { error: error instanceof Error ? error.message : "Unknown error" },
       500
@@ -159,6 +209,7 @@ async function handleGenerate(req: Request): Promise<Response> {
 }
 
 async function handleVoiceMessage(req: Request): Promise<Response> {
+  let generationStart: number | null = null;
   try {
     const form = await req.formData();
     const audioFile = form.get("audio");
@@ -171,20 +222,39 @@ async function handleVoiceMessage(req: Request): Promise<Response> {
       getDefaultModel();
 
     if (!(audioFile instanceof File)) {
+      logWarn("Voice message rejected: missing audio file.", {
+        providedFields: Array.from(form.keys()),
+      });
       return jsonResponse({ error: "Missing audio file field named 'audio'." }, 400);
     }
 
-    console.log(`Received audio: ${audioFile.type} (${audioFile.size} bytes, name: ${audioFile.name})`);
+    logInfo("Voice message received", {
+      type: audioFile.type,
+      size: audioFile.size,
+      name: audioFile.name,
+      model: selectedModel,
+    });
 
     if (!allowedAudioTypes.has(audioFile.type)) {
+      logWarn("Voice message rejected due to unsupported audio type.", {
+        type: audioFile.type,
+        allowedTypes: Array.from(allowedAudioTypes),
+      });
       return jsonResponse({ error: `Unsupported audio type ${audioFile.type}. Allowed types: ${Array.from(allowedAudioTypes).join(", ")}` }, 400);
     }
 
     if (audioFile.size > maxAudioBytes) {
+      logWarn("Voice message rejected due to audio size limit.", {
+        size: audioFile.size,
+        maxAudioBytes,
+      });
       return jsonResponse({ error: `Audio file too large (max ${maxAudioBytes} bytes)` }, 400);
     }
 
     if (!messagesJson || typeof messagesJson !== "string") {
+      logWarn("Voice message rejected: missing or invalid messages field.", {
+        messagesType: typeof messagesJson,
+      });
       return jsonResponse({ error: "Missing or invalid messages field." }, 400);
     }
 
@@ -192,13 +262,24 @@ async function handleVoiceMessage(req: Request): Promise<Response> {
     try {
       messages = JSON.parse(messagesJson);
     } catch (e) {
+      logWarn("Voice message rejected: invalid JSON in messages field.", {
+        parseError: e instanceof Error ? e.message : "Unknown error",
+      });
       return jsonResponse({ error: "Invalid JSON in messages field." }, 400);
     }
+
+    logInfo("Voice transcription requested", {
+      messagesCount: Array.isArray(messages) ? messages.length : 0,
+      lastMessagePreview: Array.isArray(messages)
+        ? preview(messages[messages.length - 1]?.content)
+        : undefined,
+    });
 
     // Transcribe audio with Groq Whisper
     const transcription = await transcribeAudio(audioFile);
 
     if (!transcription) {
+      logWarn("Voice transcription returned empty result.");
       return jsonResponse({ error: "Failed to transcribe audio." }, 500);
     }
 
@@ -209,14 +290,26 @@ async function handleVoiceMessage(req: Request): Promise<Response> {
     ];
 
     // Generate slide with the selected model
+    generationStart = Date.now();
     const slideHtml = await generateSlide(updatedMessages, currentHtml, selectedModel);
+    const durationMs = Date.now() - generationStart;
+
+    logInfo("Voice message response produced", {
+      transcription: preview(transcription),
+      htmlLength: slideHtml?.length ?? 0,
+      htmlPreview: preview(slideHtml),
+      durationMs,
+    });
 
     return jsonResponse({
       html: slideHtml,
       transcription,
     });
   } catch (error) {
-    console.error("Voice message error:", error);
+    logError("Voice message handler failed.", {
+      error: error instanceof Error ? error.message : "Unknown error",
+      durationMs: generationStart ? Date.now() - generationStart : undefined,
+    });
     return jsonResponse(
       { error: error instanceof Error ? error.message : "Unknown error" },
       500
@@ -272,6 +365,31 @@ function fallbackRoute(url: URL, method: string): RouteHandler | null {
   };
 }
 
+function isAssetOrHtmlRequest(pathname: string) {
+  const lower = pathname.toLowerCase();
+  if (lower === "/") return false;
+  const assetExtensions = [
+    ".js",
+    ".css",
+    ".map",
+    ".ico",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".svg",
+    ".webp",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".eot",
+    ".txt",
+    ".html",
+    ".htm",
+  ];
+  return assetExtensions.some((ext) => lower.endsWith(ext));
+}
+
 async function saveFile(
   req: Request,
   file: File
@@ -307,7 +425,9 @@ const server = Bun.serve({
     return handleRequest(req);
   },
   error(error) {
-    console.error("Unhandled server error:", error);
+    logError("Unhandled server error:", {
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
     return new Response("Internal Server Error", { status: 500 });
   },
 });

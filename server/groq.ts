@@ -1,10 +1,15 @@
+import { logError, logInfo, preview } from "./logger";
+
 export async function transcribeAudio(audioFile: File): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     throw new Error("GROQ_API_KEY not set");
   }
 
-  console.log(`Transcribing audio with Groq: ${audioFile.type} (${audioFile.size} bytes)`);
+  logInfo("Transcribing audio with Groq", {
+    type: audioFile.type,
+    size: audioFile.size,
+  });
 
   const formData = new FormData();
   formData.append("file", audioFile);
@@ -24,11 +29,12 @@ export async function transcribeAudio(audioFile: File): Promise<string> {
 
   if (!response.ok) {
     const error = await response.text();
-    console.error(`Groq API error: ${error}`);
+    logError("Groq API error", { error });
     throw new Error(`Groq API error: ${error}`);
   }
 
   const data = await response.json();
-  console.log(`Transcription successful: "${data.text}"`);
+  const text = typeof data.text === "string" ? data.text : "";
+  logInfo("Transcription successful", { preview: preview(text) });
   return data.text || "";
 }
