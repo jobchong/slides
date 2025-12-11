@@ -7,7 +7,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { transcribeAudio } from "./groq";
-import { generateSlide, getDefaultModel } from "./llm";
+import { generateSlide, generateSlideStream, getDefaultModel } from "./llm";
 import { logError, logInfo, logWarn, preview } from "./logger";
 
 const port = Number(process.env.PORT || 4000);
@@ -42,10 +42,10 @@ await mkdir(uploadDir, { recursive: true });
 
 const s3Client = s3Bucket
   ? new S3Client({
-      region: s3Region,
-      endpoint: s3Endpoint,
-      forcePathStyle: s3ForcePathStyle,
-    })
+    region: s3Region,
+    endpoint: s3Endpoint,
+    forcePathStyle: s3ForcePathStyle,
+  })
   : null;
 
 function fileExtension(file: File) {
@@ -76,9 +76,6 @@ function jsonResponse(body: unknown, status = 200) {
 
 async function handleRequest(req: Request): Promise<Response> {
   const url = new URL(req.url);
-  if (!isAssetOrHtmlRequest(url.pathname)) {
-    logInfo("Incoming request", { method: req.method, path: url.pathname });
-  }
 
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204 });
@@ -91,8 +88,14 @@ async function handleRequest(req: Request): Promise<Response> {
   const normalizedPath =
     url.pathname.length > 1 ? url.pathname.replace(/\/+$/, "") : url.pathname;
   const routeKey = `${req.method} ${normalizedPath}`;
-  const route = routes[routeKey] || fallbackRoute(url, req.method);
-  if (route) return route(req, url);
+  const route = routes[routeKey];
+  if (route) {
+    logInfo("Route hit", { route: routeKey });
+    return route(req, url);
+  }
+
+  const fallback = fallbackRoute(url, req.method);
+  if (fallback) return fallback(req, url);
   return jsonResponse({ error: "Not found" }, 404);
 }
 
@@ -100,8 +103,8 @@ type RouteHandler = (req: Request, url: URL) => Promise<Response> | Response;
 
 const routes: Record<string, RouteHandler> = {
   "GET /health": () => new Response("ok"),
-  "POST /api/generate": handleGenerate,
-  "POST /api/generate/": handleGenerate,
+  "POST /api/generate": handleGenerateStream,
+  "POST /api/generate/": handleGenerateStream,
   "POST /api/voice-message": handleVoiceMessage,
   "POST /api/voice-message/": handleVoiceMessage,
   "POST /upload": handleUpload,
@@ -161,14 +164,14 @@ async function handleUpload(req: Request): Promise<Response> {
   );
 }
 
-async function handleGenerate(req: Request): Promise<Response> {
+async function handleGenerateStream(req: Request): Promise<Response> {
   const start = Date.now();
   try {
     const body = await req.json();
     const { messages, currentHtml = "", model } = body || {};
 
     if (!Array.isArray(messages)) {
-      logWarn("Generate request rejected: messages must be an array.", {
+      logWarn("Generate stream request rejected: messages must be an array.", {
         receivedType: typeof messages,
       });
       return jsonResponse({ error: "messages must be an array" }, 400);
@@ -180,24 +183,60 @@ async function handleGenerate(req: Request): Promise<Response> {
       process.env.VITE_DEFAULT_MODEL ||
       getDefaultModel();
 
-    logInfo("Generate request received", {
+    logInfo("Generate stream request received", {
       model: selectedModel,
       messagesCount: messages.length,
       lastMessagePreview: preview(messages[messages.length - 1]?.content),
       currentHtmlLength: currentHtml.length,
     });
 
-    const html = await generateSlide(messages, currentHtml, selectedModel);
-    const durationMs = Date.now() - start;
-    logInfo("Generate response produced", {
-      model: selectedModel,
-      htmlLength: html?.length ?? 0,
-      htmlPreview: preview(html),
-      durationMs,
+    const encoder = new TextEncoder();
+    let totalLength = 0;
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          for await (const chunk of generateSlideStream(
+            messages,
+            currentHtml,
+            selectedModel
+          )) {
+            totalLength += chunk.length;
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+          }
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+
+          const durationMs = Date.now() - start;
+          logInfo("Generate stream completed", {
+            model: selectedModel,
+            totalLength,
+            durationMs,
+          });
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : "Unknown error";
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ error: errorMessage })}\n\n`)
+          );
+          controller.close();
+          logError("Generate stream failed mid-stream.", {
+            error: errorMessage,
+            durationMs: Date.now() - start,
+          });
+        }
+      },
     });
-    return jsonResponse({ html });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
   } catch (error) {
-    logError("Generate handler failed.", {
+    logError("Generate stream handler failed.", {
       error: error instanceof Error ? error.message : "Unknown error",
       durationMs: Date.now() - start,
     });
@@ -363,31 +402,6 @@ function fallbackRoute(url: URL, method: string): RouteHandler | null {
       headers: proxied.headers,
     });
   };
-}
-
-function isAssetOrHtmlRequest(pathname: string) {
-  const lower = pathname.toLowerCase();
-  if (lower === "/") return false;
-  const assetExtensions = [
-    ".js",
-    ".css",
-    ".map",
-    ".ico",
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".gif",
-    ".svg",
-    ".webp",
-    ".woff",
-    ".woff2",
-    ".ttf",
-    ".eot",
-    ".txt",
-    ".html",
-    ".htm",
-  ];
-  return assetExtensions.some((ext) => lower.endsWith(ext));
 }
 
 async function saveFile(

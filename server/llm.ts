@@ -237,6 +237,95 @@ export async function generateSlide(
   return callOpenAI(model, messages, currentHtml);
 }
 
+async function* streamAnthropic(
+  model: string,
+  messages: Message[],
+  currentHtml: string
+): AsyncGenerator<string> {
+  const claudeMessages = withStateContext(messages, currentHtml);
+  const stream = getAnthropicClient().messages.stream({
+    model,
+    max_tokens: MAX_GENERATION_TOKENS,
+    system: SYSTEM_PROMPT,
+    messages: claudeMessages,
+  });
+
+  for await (const event of stream) {
+    if (
+      event.type === "content_block_delta" &&
+      event.delta.type === "text_delta"
+    ) {
+      yield event.delta.text;
+    }
+  }
+}
+
+async function* streamOpenAI(
+  model: string,
+  messages: Message[],
+  currentHtml: string
+): AsyncGenerator<string> {
+  const openAiMessages = buildOpenAIMessages(
+    withStateContext(messages, currentHtml)
+  );
+  const stream = await getOpenAIClient().chat.completions.create({
+    model,
+    max_completion_tokens: MAX_GENERATION_TOKENS,
+    messages: openAiMessages,
+    stream: true,
+  });
+
+  for await (const chunk of stream) {
+    const content = chunk.choices[0]?.delta?.content;
+    if (content) {
+      yield content;
+    }
+  }
+}
+
+async function* streamGoogle(
+  model: string,
+  messages: Message[],
+  currentHtml: string
+): AsyncGenerator<string> {
+  const contextMessages = withStateContext(messages, currentHtml);
+  const contents = contextMessages.map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: m.content }],
+  }));
+
+  const response = await getGoogleClient().models.generateContentStream({
+    model,
+    contents,
+    config: {
+      systemInstruction: SYSTEM_PROMPT,
+      maxOutputTokens: MAX_GENERATION_TOKENS,
+    },
+  });
+
+  for await (const chunk of response) {
+    const text = chunk.text;
+    if (text) {
+      yield text;
+    }
+  }
+}
+
+export async function* generateSlideStream(
+  messages: Message[],
+  currentHtml: string,
+  model = DEFAULT_MODEL
+): AsyncGenerator<string> {
+  const provider = inferProvider(model);
+  if (provider === "anthropic") {
+    yield* streamAnthropic(model, messages, currentHtml);
+  } else if (provider === "google") {
+    yield* streamGoogle(model, messages, currentHtml);
+  } else {
+    yield* streamOpenAI(model, messages, currentHtml);
+  }
+}
+
 export function getDefaultModel() {
   return DEFAULT_MODEL;
 }

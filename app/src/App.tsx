@@ -5,7 +5,7 @@ import { ChatInput } from "./components/ChatInput";
 import { ThumbnailPanel } from "./components/ThumbnailPanel";
 import { SlideNavigation } from "./components/SlideNavigation";
 import { useSlideNavigation } from "./hooks/useSlideNavigation";
-import { callModel } from "./api";
+import { callModelStream } from "./api";
 import { MODEL_OPTIONS } from "./models";
 import "./App.css";
 
@@ -43,8 +43,12 @@ export default function App() {
     setError(null);
 
     try {
-      const html = await callModel(newMessages, currentSlide.html, model);
-      updateCurrentSlide(html);
+      await callModelStream(
+        newMessages,
+        currentSlide.html,
+        model,
+        (partialHtml) => updateCurrentSlide(partialHtml)
+      );
       setMessages([...newMessages, { role: "assistant", content: "Done." }]);
     } catch (err) {
       console.error("Error calling model:", err);

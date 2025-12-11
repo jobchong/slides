@@ -1,9 +1,10 @@
 import type { Message } from "./types";
 
-export async function callModel(
+export async function callModelStream(
   messages: Message[],
   currentHtml: string,
-  model: string
+  model: string,
+  onChunk: (html: string) => void
 ): Promise<string> {
   const serverUrl = import.meta.env.VITE_SERVER_URL || "http://localhost:4000";
   const response = await fetch(`${serverUrl}/api/generate`, {
@@ -17,8 +18,49 @@ export async function callModel(
     throw new Error(error.error || `Generate failed with ${response.status}`);
   }
 
-  const data = await response.json();
-  return data.html || "";
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error("No response body");
+  }
+
+  const decoder = new TextDecoder();
+  let accumulated = "";
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        const data = line.slice(6);
+        if (data === "[DONE]") {
+          return accumulated;
+        }
+        try {
+          const parsed = JSON.parse(data);
+          if (typeof parsed === "string") {
+            accumulated += parsed;
+            onChunk(accumulated);
+          } else if (parsed.error) {
+            throw new Error(parsed.error);
+          }
+        } catch (e) {
+          if (e instanceof SyntaxError) {
+            // Skip malformed JSON
+            continue;
+          }
+          throw e;
+        }
+      }
+    }
+  }
+
+  return accumulated;
 }
 
 export async function sendVoiceMessage(
