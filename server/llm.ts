@@ -1,3 +1,7 @@
+import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+
 interface Message {
   role: "user" | "assistant";
   content: string;
@@ -9,6 +13,8 @@ const DEFAULT_MODEL =
   process.env.DEFAULT_MODEL ||
   process.env.VITE_DEFAULT_MODEL ||
   "claude-sonnet-4-5-20250929";
+
+const MAX_GENERATION_TOKENS = 4096;
 
 const SYSTEM_PROMPT = `You are a slide design assistant. You output HTML that will be rendered inside a 16:9 slide container.
 
@@ -88,40 +94,69 @@ function resolveApiKey(provider: Provider) {
   return genericKey || process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
 }
 
+function requireApiKey(provider: Provider): string {
+  const key = resolveApiKey(provider);
+  if (!key) {
+    const providerLabel = provider === "anthropic" ? "ANTHROPIC" : "OPENAI";
+    throw new Error(`MODEL_API_KEY (or ${providerLabel}_API_KEY) not set`);
+  }
+  return key;
+}
+
+let anthropicClient: Anthropic | null = null;
+function getAnthropicClient(): Anthropic {
+  if (!anthropicClient) {
+    anthropicClient = new Anthropic({ apiKey: requireApiKey("anthropic") });
+  }
+  return anthropicClient;
+}
+
+let openAIClient: OpenAI | null = null;
+function getOpenAIClient(): OpenAI {
+  if (!openAIClient) {
+    openAIClient = new OpenAI({ apiKey: requireApiKey("openai") });
+  }
+  return openAIClient;
+}
+
+function buildOpenAIMessages(messages: Message[]): ChatCompletionMessageParam[] {
+  return [
+    { role: "system", content: SYSTEM_PROMPT },
+    ...messages.map((m) => ({ role: m.role, content: m.content })),
+  ];
+}
+
+function flattenOpenAIContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!content || !Array.isArray(content)) return "";
+
+  return content
+    .map((part) => {
+      if (typeof part === "string") return part;
+      if (part && typeof part === "object" && "text" in part) {
+        const text = (part as { text?: string | null }).text;
+        return text || "";
+      }
+      return "";
+    })
+    .join("");
+}
+
 async function callAnthropic(
   model: string,
   messages: Message[],
   currentHtml: string
 ): Promise<string> {
-  const apiKey = resolveApiKey("anthropic");
-  if (!apiKey) {
-    throw new Error("MODEL_API_KEY (or ANTHROPIC_API_KEY) not set");
-  }
-
   const claudeMessages = withStateContext(messages, currentHtml);
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      messages: claudeMessages,
-    }),
+  const response = await getAnthropicClient().messages.create({
+    model,
+    max_tokens: MAX_GENERATION_TOKENS,
+    system: SYSTEM_PROMPT,
+    messages: claudeMessages,
   });
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Anthropic error: ${error}`);
-  }
-
-  const data = await response.json();
-  const textBlock = data.content.find(
-    (block: { type: string }) => block.type === "text"
+  const textBlock = response.content.find(
+    (block) => block.type === "text"
   );
   return textBlock?.text ?? "";
 }
@@ -131,38 +166,16 @@ async function callOpenAI(
   messages: Message[],
   currentHtml: string
 ): Promise<string> {
-  const apiKey = resolveApiKey("openai");
-  if (!apiKey) {
-    throw new Error("MODEL_API_KEY (or OPENAI_API_KEY) not set");
-  }
-
-  const withContext = withStateContext(messages, currentHtml);
-  const openAiMessages = [
-    { role: "system", content: SYSTEM_PROMPT },
-    ...withContext,
-  ];
-
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      max_completion_tokens: 4096,
-      messages: openAiMessages,
-    }),
+  const openAiMessages = buildOpenAIMessages(
+    withStateContext(messages, currentHtml)
+  );
+  const response = await getOpenAIClient().chat.completions.create({
+    model,
+    max_completion_tokens: MAX_GENERATION_TOKENS,
+    messages: openAiMessages,
   });
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`OpenAI error: ${error}`);
-  }
-
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content;
-  return content || "";
+  return flattenOpenAIContent(response.choices?.[0]?.message?.content);
 }
 
 export async function generateSlide(
