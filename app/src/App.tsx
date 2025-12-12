@@ -43,13 +43,23 @@ export default function App() {
     setError(null);
 
     try {
-      await callModelStream(
+      const result = await callModelStream(
         newMessages,
         currentSlide.html,
         model,
         (partialHtml) => updateCurrentSlide(partialHtml)
       );
-      setMessages([...newMessages, { role: "assistant", content: "Done." }]);
+
+      if (result.clarification) {
+        // LLM is asking for clarification - show as assistant message
+        setMessages([
+          ...newMessages,
+          { role: "assistant", content: result.clarification },
+        ]);
+      } else {
+        // Normal slide generation
+        setMessages([...newMessages, { role: "assistant", content: "Done." }]);
+      }
     } catch (err) {
       console.error("Error calling model:", err);
       setError(err instanceof Error ? err.message : "Unknown error");

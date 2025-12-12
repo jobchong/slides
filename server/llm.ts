@@ -60,7 +60,20 @@ Colors:
 - Output the COMPLETE slide HTML each time (all elements, not just changes)
 - When user says "make it bigger" or "change the color", output the full updated HTML
 - Maintain all existing elements unless told to remove them
-- No markdown, no code fences, no explanations - just HTML`;
+- No markdown, no code fences, no explanations - just HTML
+
+## Asking for Clarification
+
+If you need more information before generating the slide, wrap your question in a <clarify> tag:
+
+<clarify>What color scheme would you prefer - light or dark?</clarify>
+
+Use this when:
+- The request is ambiguous (e.g., "make a slide" with no details)
+- You need specific information (colors, layout preference, content)
+- Multiple interpretations are possible
+
+When using <clarify>, output ONLY the clarify tag - no HTML, no other text.`;
 
 function withStateContext(
   messages: Message[],

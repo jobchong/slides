@@ -1,11 +1,85 @@
 import type { Message } from "./types";
 
+export interface StreamResult {
+  html: string;
+  clarification: string | null;
+}
+
+function createClarifyExtractor() {
+  const OPEN = "<clarify>";
+  const CLOSE = "</clarify>";
+
+  let isInClarify = false;
+  let accumulatedHtml = "";
+  let clarification = "";
+  let buffer = "";
+
+  const overlap = (haystack: string, token: string) => {
+    const max = Math.min(haystack.length, token.length - 1);
+    for (let i = max; i >= 1; i--) {
+      if (token.startsWith(haystack.slice(-i))) return i;
+    }
+    return 0;
+  };
+
+  const appendChunk = (chunk: string) => {
+    buffer += chunk;
+
+    while (buffer.length) {
+      if (isInClarify) {
+        const closeIdx = buffer.indexOf(CLOSE);
+        if (closeIdx === -1) {
+          const keep = overlap(buffer, CLOSE);
+          clarification += buffer.slice(0, buffer.length - keep);
+          buffer = buffer.slice(buffer.length - keep);
+          return;
+        }
+
+        clarification += buffer.slice(0, closeIdx);
+        buffer = buffer.slice(closeIdx + CLOSE.length);
+        isInClarify = false;
+      } else {
+        const openIdx = buffer.indexOf(OPEN);
+        if (openIdx === -1) {
+          const keep = overlap(buffer, OPEN);
+          accumulatedHtml += buffer.slice(0, buffer.length - keep);
+          buffer = buffer.slice(buffer.length - keep);
+          return;
+        }
+
+        accumulatedHtml += buffer.slice(0, openIdx);
+        buffer = buffer.slice(openIdx + OPEN.length);
+        isInClarify = true;
+      }
+    }
+  };
+
+  const snapshot = () => ({
+    html: accumulatedHtml.trim(),
+    clarification: clarification.trim() || null,
+  });
+
+  const finalize = () => {
+    if (buffer.length) {
+      if (isInClarify) {
+        clarification += buffer;
+      } else {
+        accumulatedHtml += buffer;
+      }
+      buffer = "";
+    }
+    return snapshot();
+  };
+
+  return { appendChunk, snapshot, finalize };
+}
+
 export async function callModelStream(
   messages: Message[],
   currentHtml: string,
   model: string,
   onChunk: (html: string) => void
-): Promise<string> {
+): Promise<StreamResult> {
   const serverUrl = import.meta.env.VITE_SERVER_URL || "http://localhost:4000";
   const response = await fetch(`${serverUrl}/api/generate`, {
     method: "POST",
@@ -24,8 +98,8 @@ export async function callModelStream(
   }
 
   const decoder = new TextDecoder();
-  let accumulated = "";
   let buffer = "";
+  const clarifyExtractor = createClarifyExtractor();
 
   while (true) {
     const { done, value } = await reader.read();
@@ -39,13 +113,14 @@ export async function callModelStream(
       if (line.startsWith("data: ")) {
         const data = line.slice(6);
         if (data === "[DONE]") {
-          return accumulated;
+          return clarifyExtractor.finalize();
         }
         try {
           const parsed = JSON.parse(data);
           if (typeof parsed === "string") {
-            accumulated += parsed;
-            onChunk(accumulated);
+            clarifyExtractor.appendChunk(parsed);
+            const { html } = clarifyExtractor.snapshot();
+            onChunk(html);
           } else if (parsed.error) {
             throw new Error(parsed.error);
           }
@@ -60,7 +135,7 @@ export async function callModelStream(
     }
   }
 
-  return accumulated;
+  return clarifyExtractor.finalize();
 }
 
 export async function sendVoiceMessage(
