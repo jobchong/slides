@@ -1,0 +1,76 @@
+.import-progress-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.import-progress-modal {
+  background: var(--panel-bg);
+  border-radius: 12px;
+  padding: 24px;
+  min-width: 320px;
+  max-width: 400px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.import-progress-header {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--page-fg);
+  margin-bottom: 16px;
+}
+
+.import-progress-status {
+  font-size: 14px;
+  color: var(--muted-strong);
+  margin-bottom: 16px;
+}
+
+.import-progress-bar-container {
+  height: 8px;
+  background: var(--panel-border);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.import-progress-bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 4px;
+  transition: width 200ms ease;
+}
+
+.import-progress-error {
+  font-size: 13px;
+  color: #c44;
+  background: rgba(204, 68, 68, 0.1);
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+}
+
+.import-progress-cancel {
+  width: 100%;
+  padding: 10px 16px;
+  border: 1px solid var(--panel-border-strong);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted-strong);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.import-progress-cancel:hover {
+  background: var(--panel-bg-secondary);
+  border-color: var(--accent);
+}

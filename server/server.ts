@@ -8,6 +8,7 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { transcribeAudio } from "./groq";
 import { generateSlide, generateSlideStream, getDefaultModel } from "./llm";
+import { importPptx } from "./import";
 import { logError, logInfo, logWarn, preview } from "./logger";
 
 const port = Number(process.env.PORT || 4000);
@@ -107,6 +108,8 @@ const routes: Record<string, RouteHandler> = {
   "POST /api/generate/": handleGenerateStream,
   "POST /api/voice-message": handleVoiceMessage,
   "POST /api/voice-message/": handleVoiceMessage,
+  "POST /api/import": handleImport,
+  "POST /api/import/": handleImport,
   "POST /upload": handleUpload,
   "POST /upload/": handleUpload,
 };
@@ -356,6 +359,110 @@ async function handleVoiceMessage(req: Request): Promise<Response> {
   }
 }
 
+const maxPptxBytes = 50 * 1024 * 1024; // 50 MB for PPTX files
+
+async function handleImport(req: Request): Promise<Response> {
+  const start = Date.now();
+  let tempPptxPath: string | null = null;
+
+  try {
+    const form = await req.formData();
+    const file = form.get("file");
+
+    if (!(file instanceof File)) {
+      logWarn("Import missing file field", {
+        providedFields: Array.from(form.keys()),
+      });
+      return jsonResponse({ error: "Missing file field named 'file'." }, 400);
+    }
+
+    if (!file.name.toLowerCase().endsWith(".pptx")) {
+      logWarn("Import rejected: not a PPTX file", { name: file.name });
+      return jsonResponse({ error: "Only .pptx files are supported." }, 400);
+    }
+
+    if (file.size > maxPptxBytes) {
+      logWarn("Import rejected due to size limit", {
+        size: file.size,
+        maxPptxBytes,
+        name: file.name,
+      });
+      return jsonResponse({ error: `File too large (max ${maxPptxBytes / 1024 / 1024} MB)` }, 400);
+    }
+
+    logInfo("Import request accepted", {
+      name: file.name,
+      size: file.size,
+    });
+
+    // Save PPTX to temp file
+    const tempDir = join(uploadDir, "temp");
+    await mkdir(tempDir, { recursive: true });
+    tempPptxPath = join(tempDir, `${Date.now()}-${crypto.randomUUID()}.pptx`);
+    await Bun.write(tempPptxPath, file);
+
+    const encoder = new TextEncoder();
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          for await (const progress of importPptx(tempPptxPath!, tempDir)) {
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(progress)}\n\n`)
+            );
+          }
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+
+          logInfo("Import completed", {
+            name: file.name,
+            durationMs: Date.now() - start,
+          });
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : "Unknown error";
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ type: "error", error: errorMessage })}\n\n`)
+          );
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+          logError("Import failed mid-stream", {
+            error: errorMessage,
+            durationMs: Date.now() - start,
+          });
+        } finally {
+          // Clean up temp PPTX file
+          if (tempPptxPath) {
+            try {
+              await Bun.file(tempPptxPath).exists() &&
+                (await import("node:fs/promises")).unlink(tempPptxPath);
+            } catch {
+              // Ignore cleanup errors
+            }
+          }
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
+  } catch (error) {
+    logError("Import handler failed", {
+      error: error instanceof Error ? error.message : "Unknown error",
+      durationMs: Date.now() - start,
+    });
+    return jsonResponse(
+      { error: error instanceof Error ? error.message : "Unknown error" },
+      500
+    );
+  }
+}
+
 async function handleImageGet(url: URL): Promise<Response> {
   const filename = url.pathname.replace(/^\/images\/?/, "");
   if (!filename) {
@@ -435,6 +542,7 @@ async function saveFile(
 
 const server = Bun.serve({
   port,
+  idleTimeout: 255,
   async fetch(req) {
     return handleRequest(req);
   },

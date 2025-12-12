@@ -9,6 +9,8 @@ interface ThumbnailPanelProps {
   onSelect: (index: number) => void;
   onAdd: () => void;
   onDelete: (index: number) => void;
+  onImport: () => void;
+  isImporting: boolean;
 }
 
 export function ThumbnailPanel({
@@ -17,6 +19,8 @@ export function ThumbnailPanel({
   onSelect,
   onAdd,
   onDelete,
+  onImport,
+  isImporting,
 }: ThumbnailPanelProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const canDelete = slides.length > 1;
@@ -53,9 +57,18 @@ export function ThumbnailPanel({
           />
         ))}
       </div>
-      <button className="thumbnail-panel-add" onClick={onAdd}>
-        + Add Slide
-      </button>
+      <div className="thumbnail-panel-actions">
+        <button className="thumbnail-panel-add" onClick={onAdd}>
+          + Add Slide
+        </button>
+        <button
+          className="thumbnail-panel-import"
+          onClick={onImport}
+          disabled={isImporting}
+        >
+          Import PPTX
+        </button>
+      </div>
     </div>
   );
 }

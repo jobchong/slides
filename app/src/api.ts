@@ -1,4 +1,4 @@
-import type { Message } from "./types";
+import type { Message, Slide } from "./types";
 
 export interface StreamResult {
   html: string;
@@ -175,4 +175,76 @@ export async function sendVoiceMessage(
   }
 
   return await response.json();
+}
+
+export interface ImportProgress {
+  type: "progress" | "slide" | "error" | "done";
+  current?: number;
+  total?: number;
+  status?: string;
+  index?: number;
+  html?: string;
+  error?: string;
+}
+
+export async function importPptx(
+  file: File,
+  onProgress: (progress: ImportProgress) => void,
+  onSlide: (slide: Slide) => void
+): Promise<void> {
+  const serverUrl = import.meta.env.VITE_SERVER_URL || "http://localhost:4000";
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(`${serverUrl}/api/import`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `Import failed with ${response.status}`);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error("No response body");
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        const data = line.slice(6);
+        if (data === "[DONE]") {
+          return;
+        }
+        try {
+          const parsed = JSON.parse(data) as ImportProgress;
+          if (parsed.type === "slide" && parsed.html !== undefined) {
+            onSlide({
+              id: crypto.randomUUID(),
+              html: parsed.html,
+            });
+          }
+          onProgress(parsed);
+        } catch (e) {
+          if (e instanceof SyntaxError) {
+            continue;
+          }
+          throw e;
+        }
+      }
+    }
+  }
 }

@@ -18,7 +18,14 @@
   overflow-x: hidden;
 }
 
-.thumbnail-panel-add {
+.thumbnail-panel-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.thumbnail-panel-add,
+.thumbnail-panel-import {
   padding: 10px 16px;
   border: 1px dashed var(--panel-border-strong);
   border-radius: 8px;
@@ -30,8 +37,20 @@
   transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
 }
 
-.thumbnail-panel-add:hover {
+.thumbnail-panel-add:hover,
+.thumbnail-panel-import:hover {
   background: var(--panel-bg-secondary);
   border-color: var(--accent);
   color: var(--accent-strong);
+}
+
+.thumbnail-panel-import:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.thumbnail-panel-import:disabled:hover {
+  background: transparent;
+  border-color: var(--panel-border-strong);
+  color: var(--muted-strong);
 }
