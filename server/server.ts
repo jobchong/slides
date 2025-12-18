@@ -9,6 +9,8 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { transcribeAudio } from "./groq";
 import { generateSlide, generateSlideStream, getDefaultModel } from "./llm";
 import { importPptx } from "./import";
+import { buildGatewayUrl, buildS3PublicUploadUrl, buildStoredImageUrl } from "./gateway";
+import type { ImportOptions } from "./import/types";
 import { logError, logInfo, logWarn, preview } from "./logger";
 
 const port = Number(process.env.PORT || 4000);
@@ -59,13 +61,6 @@ function fileExtension(file: File) {
     "image/gif": ".gif",
   };
   return mimeFallback[file.type] || "";
-}
-
-function buildGatewayUrl(req: Request, filename: string) {
-  const base =
-    process.env.PUBLIC_BASE_URL ||
-    `${req.headers.get("x-forwarded-proto") || "http"}://${req.headers.get("host") || `localhost:${port}`}`;
-  return `${base}/images/${filename}`;
 }
 
 function jsonResponse(body: unknown, status = 200) {
@@ -402,11 +397,12 @@ async function handleImport(req: Request): Promise<Response> {
     await Bun.write(tempPptxPath, file);
 
     const encoder = new TextEncoder();
+    const importOptions: ImportOptions = { concurrency: 8 };
 
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          for await (const progress of importPptx(tempPptxPath!, tempDir)) {
+          for await (const progress of importPptx(tempPptxPath!, tempDir, req, importOptions)) {
             controller.enqueue(
               encoder.encode(`data: ${JSON.stringify(progress)}\n\n`)
             );
@@ -473,6 +469,14 @@ async function handleImageGet(url: URL): Promise<Response> {
   }
 
   if (s3Client) {
+    const directPublicUrl = buildS3PublicUploadUrl(filename);
+    if (directPublicUrl) {
+      return new Response(null, {
+        status: 302,
+        headers: { Location: directPublicUrl },
+      });
+    }
+
     const key = `uploads/${filename}`;
     const command = new GetObjectCommand({ Bucket: s3Bucket, Key: key });
     const publicUrl = await getSignedUrl(s3Client, command, {
@@ -529,15 +533,13 @@ async function saveFile(
         ContentType: file.type || "application/octet-stream",
       })
     );
-    // Return a stable gateway URL; GET handler issues fresh signed URLs per request.
-    const gatewayUrl = buildGatewayUrl(req, filename);
-    return { url: gatewayUrl, filename };
+    // Prefer direct S3/CDN URL if configured; otherwise return a stable gateway URL.
+    return { url: buildStoredImageUrl(req, filename), filename };
   }
 
   const targetPath = join(uploadDir, filename);
   await Bun.write(targetPath, file);
-  const publicUrl = buildGatewayUrl(req, filename);
-  return { url: publicUrl, filename };
+  return { url: buildGatewayUrl(req, filename), filename };
 }
 
 const server = Bun.serve({

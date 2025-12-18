@@ -17,7 +17,7 @@ const DEFAULT_MODEL =
 
 const MAX_GENERATION_TOKENS = 4096;
 
-const SYSTEM_PROMPT = `You are a slide design assistant. You output HTML that will be rendered inside a 16:9 slide container.
+const BASE_SYSTEM_PROMPT = `You are a slide design assistant. You output HTML that will be rendered inside a 16:9 slide container.
 
 When the user describes what they want, output ONLY the HTML content for the slide. No explanation, no markdown code fences, just raw HTML.
 
@@ -74,6 +74,10 @@ Use this when:
 - Multiple interpretations are possible
 
 When using <clarify>, output ONLY the clarify tag - no HTML, no other text.`;
+
+function buildSystemPrompt(_currentHtml: string): string {
+  return BASE_SYSTEM_PROMPT;
+}
 
 function withStateContext(
   messages: Message[],
@@ -153,13 +157,6 @@ function getGoogleClient(): GoogleGenAI {
   return googleClient;
 }
 
-function buildOpenAIMessages(messages: Message[]): ChatCompletionMessageParam[] {
-  return [
-    { role: "system", content: SYSTEM_PROMPT },
-    ...messages.map((m) => ({ role: m.role, content: m.content })),
-  ];
-}
-
 function flattenOpenAIContent(content: unknown): string {
   if (typeof content === "string") return content;
   if (!content || !Array.isArray(content)) return "";
@@ -185,7 +182,7 @@ async function callAnthropic(
   const response = await getAnthropicClient().messages.create({
     model,
     max_tokens: MAX_GENERATION_TOKENS,
-    system: SYSTEM_PROMPT,
+    system: buildSystemPrompt(currentHtml),
     messages: claudeMessages,
   });
 
@@ -200,9 +197,13 @@ async function callOpenAI(
   messages: Message[],
   currentHtml: string
 ): Promise<string> {
-  const openAiMessages = buildOpenAIMessages(
-    withStateContext(messages, currentHtml)
-  );
+  const openAiMessages = [
+    { role: "system" as const, content: buildSystemPrompt(currentHtml) },
+    ...withStateContext(messages, currentHtml).map((m) => ({
+      role: m.role,
+      content: m.content,
+    })),
+  ];
   const response = await getOpenAIClient().chat.completions.create({
     model,
     max_completion_tokens: MAX_GENERATION_TOKENS,
@@ -227,7 +228,7 @@ async function callGoogle(
     model,
     contents,
     config: {
-      systemInstruction: SYSTEM_PROMPT,
+      systemInstruction: buildSystemPrompt(currentHtml),
       maxOutputTokens: MAX_GENERATION_TOKENS,
     },
   });
@@ -259,7 +260,7 @@ async function* streamAnthropic(
   const stream = getAnthropicClient().messages.stream({
     model,
     max_tokens: MAX_GENERATION_TOKENS,
-    system: SYSTEM_PROMPT,
+    system: buildSystemPrompt(currentHtml),
     messages: claudeMessages,
   });
 
@@ -278,9 +279,13 @@ async function* streamOpenAI(
   messages: Message[],
   currentHtml: string
 ): AsyncGenerator<string> {
-  const openAiMessages = buildOpenAIMessages(
-    withStateContext(messages, currentHtml)
-  );
+  const openAiMessages = [
+    { role: "system" as const, content: buildSystemPrompt(currentHtml) },
+    ...withStateContext(messages, currentHtml).map((m) => ({
+      role: m.role,
+      content: m.content,
+    })),
+  ];
   const stream = await getOpenAIClient().chat.completions.create({
     model,
     max_completion_tokens: MAX_GENERATION_TOKENS,
@@ -311,7 +316,7 @@ async function* streamGoogle(
     model,
     contents,
     config: {
-      systemInstruction: SYSTEM_PROMPT,
+      systemInstruction: buildSystemPrompt(currentHtml),
       maxOutputTokens: MAX_GENERATION_TOKENS,
     },
   });

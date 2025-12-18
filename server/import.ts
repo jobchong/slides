@@ -1,229 +1,515 @@
 import { spawn } from "node:child_process";
-import { mkdir, readdir, unlink, rmdir, readFile } from "node:fs/promises";
-import { join, basename } from "node:path";
-import { GoogleGenAI } from "@google/genai";
+import { mkdir, readdir, unlink, rmdir, readFile, writeFile } from "node:fs/promises";
+import { join, normalize } from "node:path";
+import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { buildGatewayUrl, buildStoredImageUrl } from "./gateway";
 import { logError, logInfo, logWarn } from "./logger";
+import { convertPdfPageToPng, convertPptxToPdf } from "./import/convert";
 
-const IMPORT_MODEL = "models/gemini-2.5-flash";
+// Import hybrid parsing modules
+import type {
+  ImportProgress,
+  Theme,
+  SlideRelationships,
+  ImportOptions,
+  SlideSource,
+  ExtractedSlide,
+  EditableElement,
+} from "./import/types";
+import { parseTheme, getDefaultTheme } from "./import/theme";
+import { parsePresentation, parseRelationships, parseSlide, resetElementIdCounter } from "./import/parser";
+import { analyzeSlide } from "./import/complexity";
+import { convertToEditable, convertBackground } from "./import/converter";
+import { convertSlideWithVision } from "./import/llm-convert";
 
-const IMPORT_SYSTEM_PROMPT = `You are converting a slide image to HTML. Output ONLY raw HTML that recreates the slide visually.
+const s3Bucket = process.env.S3_BUCKET;
+const s3Region = process.env.S3_REGION || "us-east-1";
+const s3Endpoint = process.env.S3_ENDPOINT;
+const s3ForcePathStyle = process.env.S3_FORCE_PATH_STYLE === "true";
 
-Rules:
-- Use position: absolute on all elements with percentage-based top/left/right/bottom
-- Use px for font-size, width, height
-- Preserve the visual layout, colors, fonts, and positioning as closely as possible
-- For images in the slide, use placeholder divs with background-color
-- No markdown, no code fences, no explanations - just HTML
-- The HTML will be rendered in a 16:9 container with position: relative
-
-Example output format:
-<div style="position: absolute; top: 10%; left: 5%; font-size: 48px; font-weight: 700; color: #1a1a2e;">
-  Slide Title
-</div>
-<div style="position: absolute; top: 30%; left: 5%; font-size: 24px; color: #333;">
-  • Bullet point one
-</div>`;
-
-interface ImportProgress {
-  type: "progress" | "slide" | "error" | "done";
-  current?: number;
-  total?: number;
-  status?: string;
-  index?: number;
-  html?: string;
-  error?: string;
-}
-
-function requireGoogleApiKey(): string {
-  const key =
-    process.env.MODEL_API_KEY ||
-    process.env.VITE_MODEL_API_KEY ||
-    process.env.GOOGLE_API_KEY ||
-    process.env.VITE_GOOGLE_API_KEY;
-  if (!key) {
-    throw new Error("GOOGLE_API_KEY (or MODEL_API_KEY) not set for import");
+let s3Client: S3Client | null = null;
+function getS3Client(): S3Client | null {
+  if (!s3Bucket) return null;
+  if (!s3Client) {
+    s3Client = new S3Client({
+      region: s3Region,
+      endpoint: s3Endpoint,
+      forcePathStyle: s3ForcePathStyle,
+    });
   }
-  return key;
+  return s3Client;
 }
 
-let googleClient: GoogleGenAI | null = null;
-function getGoogleClient(): GoogleGenAI {
-  if (!googleClient) {
-    googleClient = new GoogleGenAI({ apiKey: requireGoogleApiKey() });
+async function saveUploadBytes(
+  req: Request,
+  uploadDir: string,
+  filename: string,
+  bytes: Uint8Array,
+  contentType?: string
+): Promise<string> {
+  const client = getS3Client();
+  if (client && s3Bucket) {
+    const key = `uploads/${filename}`;
+    await client.send(
+      new PutObjectCommand({
+        Bucket: s3Bucket,
+        Key: key,
+        Body: bytes,
+        ContentType: contentType || "application/octet-stream",
+      })
+    );
+    return buildStoredImageUrl(req, filename);
   }
-  return googleClient;
+
+  const uploadPath = join(uploadDir, filename);
+  await writeFile(uploadPath, bytes);
+  return buildGatewayUrl(req, filename);
 }
 
-async function convertPptxToImages(
+/**
+ * Unzip PPTX and read its contents
+ */
+async function unzipPptx(
   pptxPath: string,
   outputDir: string
-): Promise<string[]> {
+): Promise<void> {
   await mkdir(outputDir, { recursive: true });
 
+  const listEntries = (): Promise<string[]> =>
+    new Promise((resolve, reject) => {
+      const proc = spawn("unzip", ["-Z1", pptxPath]);
+      let stdout = "";
+      let stderr = "";
+      proc.stdout.on("data", (data) => {
+        stdout += data.toString();
+      });
+      proc.stderr.on("data", (data) => {
+        stderr += data.toString();
+      });
+      proc.on("close", (code) => {
+        if (code !== 0) {
+          reject(new Error(`Failed to inspect PPTX contents: ${stderr}`));
+          return;
+        }
+        const entries = stdout
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean);
+        resolve(entries);
+      });
+      proc.on("error", (err) => {
+        reject(new Error(`Failed to run unzip: ${err.message}`));
+      });
+    });
+
+  const isSafeZipEntry = (entry: string): boolean => {
+    if (entry.length > 1024) return false;
+    if (entry.includes("\0")) return false;
+    // Prevent absolute paths and Windows paths.
+    if (entry.startsWith("/") || entry.startsWith("\\") || /^[A-Za-z]:/.test(entry)) {
+      return false;
+    }
+    // Prevent traversal attempts.
+    const parts = entry.replace(/\\/g, "/").split("/");
+    if (parts.some((part) => part === "..")) return false;
+    return true;
+  };
+
+  const entries = await listEntries();
+  const MAX_ZIP_ENTRIES = 10_000;
+  if (entries.length > MAX_ZIP_ENTRIES) {
+    throw new Error(`PPTX contains too many entries (${entries.length})`);
+  }
+  const badEntry = entries.find((entry) => !isSafeZipEntry(entry));
+  if (badEntry) {
+    throw new Error(`Invalid PPTX entry path: ${badEntry}`);
+  }
+
   return new Promise((resolve, reject) => {
-    // Use LibreOffice to convert PPTX to PDF first, then PDF to images
-    // soffice --headless --convert-to pdf --outdir <outputDir> <pptxPath>
-    const soffice = spawn("soffice", [
-      "--headless",
-      "--convert-to",
-      "pdf",
-      "--outdir",
-      outputDir,
-      pptxPath,
-    ]);
+    const unzip = spawn("unzip", ["-o", "-q", pptxPath, "-d", outputDir]);
 
     let stderr = "";
-    soffice.stderr.on("data", (data) => {
+    unzip.stderr.on("data", (data) => {
       stderr += data.toString();
     });
 
-    soffice.on("close", async (code) => {
+    unzip.on("close", (code) => {
       if (code !== 0) {
-        logError("LibreOffice conversion failed", { code, stderr });
-        reject(new Error(`LibreOffice conversion failed: ${stderr || `exit code ${code}`}`));
+        reject(new Error(`Failed to unzip PPTX: ${stderr}`));
         return;
       }
-
-      // Find the generated PDF
-      const pptxName = basename(pptxPath, ".pptx");
-      const pdfPath = join(outputDir, `${pptxName}.pdf`);
-
-      // Convert PDF to images using pdftoppm (from poppler)
-      const pdftoppm = spawn("pdftoppm", [
-        "-png",
-        "-r",
-        "150", // 150 DPI - good balance of quality and size
-        pdfPath,
-        join(outputDir, "slide"),
-      ]);
-
-      let pdftoppmStderr = "";
-      pdftoppm.stderr.on("data", (data) => {
-        pdftoppmStderr += data.toString();
-      });
-
-      pdftoppm.on("close", async (pdfCode) => {
-        if (pdfCode !== 0) {
-          logError("pdftoppm conversion failed", { code: pdfCode, stderr: pdftoppmStderr });
-          reject(new Error(`PDF to image conversion failed: ${pdftoppmStderr || `exit code ${pdfCode}`}`));
-          return;
-        }
-
-        // Clean up PDF
-        try {
-          await unlink(pdfPath);
-        } catch {
-          // Ignore cleanup errors
-        }
-
-        // Find all generated PNG files
-        try {
-          const files = await readdir(outputDir);
-          const pngFiles = files
-            .filter((f) => f.endsWith(".png"))
-            .sort() // slide-1.png, slide-2.png, etc.
-            .map((f) => join(outputDir, f));
-
-          if (pngFiles.length === 0) {
-            reject(new Error("No slide images generated"));
-            return;
-          }
-
-          logInfo("PPTX converted to images", { count: pngFiles.length });
-          resolve(pngFiles);
-        } catch (err) {
-          reject(err);
-        }
-      });
-
-      pdftoppm.on("error", (err) => {
-        logError("pdftoppm spawn error", { error: err.message });
-        reject(new Error(`Failed to run pdftoppm: ${err.message}. Is poppler installed?`));
-      });
+      resolve();
     });
 
-    soffice.on("error", (err) => {
-      logError("LibreOffice spawn error", { error: err.message });
-      reject(new Error(`Failed to run LibreOffice: ${err.message}. Is LibreOffice installed?`));
+    unzip.on("error", (err) => {
+      reject(new Error(`Failed to run unzip: ${err.message}`));
     });
   });
 }
 
-async function convertImageToHtml(imagePath: string): Promise<string> {
-  const imageData = await readFile(imagePath);
-  const base64Image = imageData.toString("base64");
-
-  const client = getGoogleClient();
-  const response = await client.models.generateContent({
-    model: IMPORT_MODEL,
-    contents: [
-      {
-        role: "user",
-        parts: [
-          {
-            inlineData: {
-              mimeType: "image/png",
-              data: base64Image,
-            },
-          },
-          {
-            text: "Convert this slide to HTML. Output ONLY the HTML, no explanations.",
-          },
-        ],
-      },
-    ],
-    config: {
-      systemInstruction: IMPORT_SYSTEM_PROMPT,
-      maxOutputTokens: 4096,
-    },
-  });
-
-  return response.text?.trim() ?? "";
+/**
+ * Read a file from the unzipped PPTX, returns null if not found
+ */
+async function readPptxFile(
+  pptxDir: string,
+  relativePath: string
+): Promise<string | null> {
+  const normalized = normalize(relativePath).replace(/\\/g, "/");
+  if (
+    normalized.startsWith("/") ||
+    normalized.startsWith("../") ||
+    normalized.includes("/../") ||
+    normalized.includes("\0") ||
+    /^[A-Za-z]:/.test(normalized)
+  ) {
+    logWarn("Blocked unsafe PPTX path read attempt", { relativePath });
+    return null;
+  }
+  try {
+    const content = await readFile(join(pptxDir, normalized), "utf-8");
+    return content;
+  } catch {
+    return null;
+  }
 }
 
+async function uploadPngToGateway(
+  pngPath: string,
+  uploadDir: string,
+  req: Request
+): Promise<string> {
+  const filename = `${Date.now()}-${crypto.randomUUID()}.png`;
+  const bytes = new Uint8Array(await Bun.file(pngPath).arrayBuffer());
+  return saveUploadBytes(req, uploadDir, filename, bytes, "image/png");
+}
+
+/**
+ * Main import function using hybrid approach
+ */
 export async function* importPptx(
   pptxPath: string,
-  tempDir: string
+  tempDir: string,
+  req: Request,
+  options: ImportOptions = {}
 ): AsyncGenerator<ImportProgress> {
+  const envConcurrency = Number(process.env.IMPORT_CONCURRENCY);
+  const effectiveOptions: ImportOptions = {
+    ...options,
+    concurrency: options.concurrency ?? (Number.isFinite(envConcurrency) ? envConcurrency : 2),
+  };
+
   const importId = crypto.randomUUID();
   const workDir = join(tempDir, `import-${importId}`);
+  const uploadDir = join(tempDir, "..");
 
   try {
-    yield { type: "progress", status: "Converting PPTX to images..." };
+    yield { type: "progress", status: "Extracting PPTX contents..." };
 
-    const imagePaths = await convertPptxToImages(pptxPath, workDir);
-    const total = imagePaths.length;
+    // Reset element ID counter for this import session
+    resetElementIdCounter();
 
-    logInfo("Starting slide conversion", { total, importId });
+    // Unzip PPTX
+    await mkdir(uploadDir, { recursive: true });
+    await unzipPptx(pptxPath, workDir);
 
-    for (let i = 0; i < imagePaths.length; i++) {
-      yield {
-        type: "progress",
-        current: i + 1,
-        total,
-        status: `Converting slide ${i + 1} of ${total}...`,
-      };
+    // Read presentation.xml for slide size and order
+    const presentationXml = await readPptxFile(workDir, "ppt/presentation.xml");
+    if (!presentationXml) {
+      throw new Error("Invalid PPTX: missing presentation.xml");
+    }
+
+    const { slideSize, slideOrder } = parsePresentation(presentationXml);
+    logInfo("Parsed presentation", {
+      slideCount: slideOrder.length,
+      slideSize,
+    });
+
+    // Read theme
+    const themeXml = await readPptxFile(workDir, "ppt/theme/theme1.xml");
+    const theme: Theme = themeXml ? parseTheme(themeXml) : getDefaultTheme();
+
+    // Read presentation relationships to get slide file paths
+    const presRelsXml = await readPptxFile(
+      workDir,
+      "ppt/_rels/presentation.xml.rels"
+    );
+    const presRels = presRelsXml
+      ? parseRelationships(presRelsXml)
+      : new Map<string, string>();
+
+    const total = slideOrder.length;
+    let rasterConversions = 0;
+
+    yield { type: "progress", status: "Parsing slides...", total };
+
+    const MAX_CONCURRENCY = 8;
+    const concurrency = Math.min(
+      MAX_CONCURRENCY,
+      Math.max(1, Number(effectiveOptions.concurrency || 1))
+    );
+    let pdfPromise: Promise<string> | null = null;
+  const ensurePdf = () => {
+    if (!pdfPromise) {
+      pdfPromise = convertPptxToPdf(pptxPath, workDir);
+    }
+    return pdfPromise;
+  };
+
+    const resolveExtractedPath = (rootDir: string, relativePath: string): string | null => {
+      const normalized = normalize(relativePath).replace(/\\/g, "/");
+      if (
+        normalized.startsWith("/") ||
+        normalized.startsWith("../") ||
+        normalized.includes("/../") ||
+        normalized.includes("\0") ||
+        /^[A-Za-z]:/.test(normalized)
+      ) {
+        return null;
+      }
+      const candidate = normalize(join(rootDir, normalized));
+      const rootPrefix = normalize(rootDir.endsWith("/") ? rootDir : `${rootDir}/`);
+      if (!candidate.startsWith(rootPrefix)) return null;
+      return candidate;
+    };
+
+    const guessImageContentType = (ext: string): string => {
+      const lower = ext.toLowerCase();
+      if (lower === "jpg" || lower === "jpeg") return "image/jpeg";
+      if (lower === "png") return "image/png";
+      if (lower === "webp") return "image/webp";
+      if (lower === "gif") return "image/gif";
+      if (lower === "svg") return "image/svg+xml";
+      return "application/octet-stream";
+    };
+
+    // Helper to resolve image rIds to URLs
+    const uploadedImages = new Map<string, string>();
+
+    const uploadImage = async (rId: string, slideRels: SlideRelationships): Promise<string | undefined> => {
+      if (uploadedImages.has(rId)) {
+        return uploadedImages.get(rId);
+      }
+
+      const imagePath = slideRels.get(rId);
+      if (!imagePath) return undefined;
+
+      const pptRoot = join(workDir, "ppt");
+      const cleanedRel = imagePath.replace(/\\/g, "/").replace(/^(\.\.\/)+/, "");
+      const resolved = resolveExtractedPath(pptRoot, cleanedRel);
+      if (!resolved) return undefined;
+      try {
+        const imageBytes = new Uint8Array(await Bun.file(resolved).arrayBuffer());
+        const ext = cleanedRel.split(".").pop() || "png";
+        const filename = `${Date.now()}-${crypto.randomUUID()}.${ext}`;
+        const url = await saveUploadBytes(
+          req,
+          uploadDir,
+          filename,
+          imageBytes,
+          guessImageContentType(ext)
+        );
+        uploadedImages.set(rId, url);
+        return url;
+      } catch {
+        return undefined;
+      }
+    };
+
+    const startSlideTask = async (i: number) => {
+      const slideRId = slideOrder[i];
+      const slidePath = presRels.get(slideRId);
+
+      if (!slidePath) {
+        return { i, progress: { type: "error", error: `Slide ${i + 1}: path not found in relationships` } as ImportProgress };
+      }
+
+      const slideFilePath = slidePath.startsWith("/")
+        ? slidePath.slice(1)
+        : `ppt/${slidePath}`;
 
       try {
-        const html = await convertImageToHtml(imagePaths[i]);
-        yield { type: "slide", index: i, html };
-        logInfo("Slide converted", { index: i, htmlLength: html.length });
+        const slideXml = await readPptxFile(workDir, slideFilePath);
+        if (!slideXml) {
+          throw new Error(`Missing slide XML: ${slideFilePath}`);
+        }
+
+        const slideRelsPath = slideFilePath.replace(
+          /slides\/slide(\d+)\.xml$/,
+          "slides/_rels/slide$1.xml.rels"
+        );
+        const slideRelsXml = await readPptxFile(workDir, slideRelsPath);
+        const slideRels: SlideRelationships = slideRelsXml
+          ? parseRelationships(slideRelsXml)
+          : new Map();
+
+        const extractedSlide = parseSlide(slideXml, i, slideSize, theme, slideRels);
+
+        // Analyze slide complexity
+        const analysis = analyzeSlide(extractedSlide);
+        logInfo("Slide complexity analysis", {
+          slideIndex: i,
+          canFullyReconstruct: analysis.canFullyReconstruct,
+          backgroundDecision: analysis.backgroundAnalysis.decision,
+          reconstructCount: analysis.elementsToReconstruct.length,
+          rasterizeCount: analysis.elementsToRasterize.length,
+        });
+
+        // Image URL resolver for this slide
+        const imageUrlResolver = async (rId: string) => uploadImage(rId, slideRels);
+
+        // Upload images used in the slide
+        for (const element of extractedSlide.elements) {
+          if (element.type === "image" && element.image?.rId) {
+            await uploadImage(element.image.rId, slideRels);
+          }
+        }
+
+        let html: string;
+        let source: SlideSource;
+
+        // Generate screenshot for LLM visual reference
+        const pdfPath = await ensurePdf();
+        const pngPath = await convertPdfPageToPng(
+          pdfPath,
+          i,
+          workDir,
+          `slide-${i + 1}`,
+          150
+        );
+
+        // Read screenshot as base64 for vision API
+        const screenshotBytes = await Bun.file(pngPath).arrayBuffer();
+        const screenshotBase64 = Buffer.from(screenshotBytes).toString("base64");
+
+        // Convert extracted elements to editable format
+        const elements = extractedSlide.elements
+          .map((el) => convertToEditable(el, theme, (rId) => uploadedImages.get(rId)))
+          .filter((el): el is NonNullable<typeof el> => el !== null);
+
+        // Convert background info (for prompt context, not rasterization)
+        const background = convertBackground(extractedSlide.background);
+
+        // Use vision LLM to generate HTML from screenshot + element data
+        html = await convertSlideWithVision(
+          screenshotBase64,
+          elements,
+          theme,
+          background
+        );
+
+        // Source is minimal - the HTML is fully editable, no special handling needed
+        source = {
+          background: { type: "none" },
+          elements: [],
+          import: { slideIndex: i },
+        };
+        rasterConversions++;
+
+        return {
+          i,
+          progress: {
+            type: "slide",
+            index: i,
+            html,
+            source,
+          } as ImportProgress,
+        };
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : "Unknown error";
-        logError("Failed to convert slide", { index: i, error: errorMsg });
-        yield { type: "error", error: `Slide ${i + 1}: ${errorMsg}` };
+        return { i, progress: { type: "error", error: `Slide ${i + 1}: ${errorMsg}` } as ImportProgress };
+      }
+    };
+
+    const running = new Map<number, Promise<{ i: number; progress: ImportProgress }>>();
+    const completed = new Map<number, ImportProgress>();
+    let nextToYield = 0;
+    let nextIndex = 0;
+    let completedCount = 0;
+
+    const startTask = (i: number) => {
+      running.set(i, startSlideTask(i));
+    };
+
+    // Start initial batch of tasks (no progress yet - nothing completed)
+    while (nextIndex < total && running.size < concurrency) {
+      startTask(nextIndex++);
+    }
+
+    yield {
+      type: "progress",
+      current: 0,
+      total,
+      status: `Converting ${total} slides...`,
+    };
+
+    while (running.size > 0) {
+      const raced = await Promise.race(
+        Array.from(running.values()).map((p) => p)
+      );
+      running.delete(raced.i);
+      const progress = raced.progress;
+      completed.set(raced.i, progress);
+      completedCount++;
+
+      // Report progress based on completed slides
+      yield {
+        type: "progress",
+        current: completedCount,
+        total,
+        status: `Converted ${completedCount} of ${total} slides...`,
+      };
+
+      // Start next task if available
+      while (nextIndex < total && running.size < concurrency) {
+        startTask(nextIndex++);
+      }
+
+      // Yield completed slides in order
+      while (completed.has(nextToYield)) {
+        const ordered = completed.get(nextToYield)!;
+        completed.delete(nextToYield);
+        if (ordered.type === "slide") {
+          logInfo("Slide converted", {
+            index: nextToYield,
+            htmlLength: ordered.html?.length,
+          });
+        } else if (ordered.type === "error") {
+          logError("Failed to convert slide", { index: nextToYield, error: ordered.error });
+        }
+        yield ordered;
+        nextToYield++;
       }
     }
 
-    yield { type: "done", status: `Imported ${total} slides` };
+    yield {
+      type: "done",
+      status: `Imported ${total} slides (${rasterConversions} raster)`,
+    };
+
+    logInfo("Import completed", {
+      total,
+      rasterConversions,
+    });
   } finally {
     // Cleanup temp files
     try {
-      const files = await readdir(workDir);
-      for (const file of files) {
-        await unlink(join(workDir, file));
-      }
-      await rmdir(workDir);
+      const cleanupDir = async (dir: string) => {
+        try {
+          const files = await readdir(dir, { withFileTypes: true });
+          for (const file of files) {
+            const path = join(dir, file.name);
+            if (file.isDirectory()) {
+              await cleanupDir(path);
+            } else {
+              await unlink(path);
+            }
+          }
+          await rmdir(dir);
+        } catch {
+          // Ignore errors
+        }
+      };
+      await cleanupDir(workDir);
       logInfo("Cleaned up import temp files", { workDir });
     } catch {
       logWarn("Failed to clean up import temp files", { workDir });

@@ -31,10 +31,12 @@ export function SlideThumbnail({
     >
       <div className="slide-thumbnail-preview">
         {slide.html ? (
-          <div
-            className="slide-thumbnail-content"
-            dangerouslySetInnerHTML={{ __html: slide.html }}
-          />
+          <div className="slide-thumbnail-content">
+            <div
+              className="slide-thumbnail-inner"
+              dangerouslySetInnerHTML={{ __html: slide.html }}
+            />
+          </div>
         ) : (
           <div className="slide-thumbnail-empty" />
         )}

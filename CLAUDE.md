@@ -74,7 +74,9 @@ bun run preview
 - `MODEL_API_KEY` / `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` - LLM API keys
 - `GROQ_API_KEY` - Required for voice transcription
 - `S3_BUCKET` - Enable S3 storage (optional)
+- `S3_PUBLIC_BASE_URL` - If set, uploads return direct S3/CDN URLs (e.g. `https://.../uploads`) instead of `/images/{filename}` redirects
 - `UPLOAD_DIR` - Disk upload directory (default: server/uploads)
+ - PPTX import concurrency is currently fixed at `8` in `POST /api/import` (not user-configurable)
 
 ## Architecture Notes
 

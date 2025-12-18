@@ -4,6 +4,9 @@ bun.lock
 .DS_Store
 .env
 .env.local
+.claude/
 server/uploads
 app/dist
 *.log
+.tmp
+*.pptx

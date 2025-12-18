@@ -1,4 +1,4 @@
-import type { Message, Slide } from "./types";
+import type { Message, Slide, SlideSource } from "./types";
 
 export interface StreamResult {
   html: string;
@@ -184,6 +184,7 @@ export interface ImportProgress {
   status?: string;
   index?: number;
   html?: string;
+  source?: SlideSource;
   error?: string;
 }
 
@@ -235,6 +236,7 @@ export async function importPptx(
             onSlide({
               id: crypto.randomUUID(),
               html: parsed.html,
+              source: parsed.source,
             });
           }
           onProgress(parsed);

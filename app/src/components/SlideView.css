@@ -11,6 +11,10 @@
   background: #ffffff;
 }
 
+.slide > div {
+  height: 100%;
+}
+
 .slide-loading {
   position: absolute;
   inset: 0;
