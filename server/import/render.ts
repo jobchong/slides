@@ -54,6 +54,10 @@ function renderTextElement(element: EditableElement): string {
   const text = element.text!;
   const style = text.style;
 
+  const pointsToPx = 96 / 72;
+  const fontSizePx = style.fontSize;
+  const fontSizePt = fontSizePx / pointsToPx;
+
   const cssProps: string[] = [
     "position: absolute",
     `left: ${element.bounds.x.toFixed(4)}%`,
@@ -61,7 +65,7 @@ function renderTextElement(element: EditableElement): string {
     `width: ${element.bounds.width.toFixed(4)}%`,
     `height: ${element.bounds.height.toFixed(4)}%`,
     `font-family: '${style.fontFamily}', sans-serif`,
-    `font-size: ${style.fontSize}px`,
+    `font-size: ${fontSizePx}px`,
     `font-weight: ${style.fontWeight === "bold" ? 700 : 400}`,
     `font-style: ${style.fontStyle}`,
     `color: ${style.color}`,
@@ -69,16 +73,23 @@ function renderTextElement(element: EditableElement): string {
     "white-space: pre-wrap",
     "overflow: hidden",
     "box-sizing: border-box",
+    "line-height: 1",
   ];
 
+  const isEllipseText = element.shape?.kind === "ellipse";
+
   // Vertical alignment using flexbox
-  if (style.verticalAlign !== "top") {
+  if (isEllipseText || style.verticalAlign !== "top") {
     cssProps.push("display: flex");
     cssProps.push("flex-direction: column");
-    if (style.verticalAlign === "middle") {
+    if (isEllipseText || style.verticalAlign === "middle") {
       cssProps.push("justify-content: center");
     } else if (style.verticalAlign === "bottom") {
       cssProps.push("justify-content: flex-end");
+    }
+    if (isEllipseText) {
+      cssProps.push("align-items: center");
+      cssProps.push("text-align: center");
     }
   }
 
@@ -103,9 +114,23 @@ function renderTextElement(element: EditableElement): string {
     cssProps.push(`transform: rotate(${element.rotation}deg)`);
   }
 
-  // Padding for text in shapes
-  if (element.shape) {
-    cssProps.push("padding: 8px");
+  // Padding for text in shapes (from PPTX insets when available)
+  if (element.shape && !isEllipseText) {
+    const lInsPt = (text as EditableTextElement & { insets?: { l?: number; r?: number; t?: number; b?: number } })
+      ?.insets?.l ?? 0;
+    const rInsPt = (text as EditableTextElement & { insets?: { l?: number; r?: number; t?: number; b?: number } })
+      ?.insets?.r ?? 0;
+    const tInsPt = (text as EditableTextElement & { insets?: { l?: number; r?: number; t?: number; b?: number } })
+      ?.insets?.t ?? 0;
+    const bInsPt = (text as EditableTextElement & { insets?: { l?: number; r?: number; t?: number; b?: number } })
+      ?.insets?.b ?? 0;
+    if (lInsPt || rInsPt || tInsPt || bInsPt) {
+      const lIns = lInsPt * pointsToPx;
+      const rIns = rInsPt * pointsToPx;
+      const tIns = tInsPt * pointsToPx;
+      const bIns = bInsPt * pointsToPx;
+      cssProps.push(`padding: ${tIns}px ${rIns}px ${bIns}px ${lIns}px`);
+    }
   }
 
   const content = escapeHtml(text.content).replace(/\n/g, "<br>");
@@ -140,6 +165,8 @@ function renderImageElement(element: EditableElement): string {
  */
 function renderShapeElement(element: EditableElement): string {
   const shape = element.shape!;
+  const pointsToPx = 96 / 72;
+  const strokeWidthPx = (shape.strokeWidth || 1) * pointsToPx;
 
   const cssProps: string[] = [
     "position: absolute",
@@ -149,15 +176,8 @@ function renderShapeElement(element: EditableElement): string {
     `height: ${element.bounds.height.toFixed(4)}%`,
   ];
 
-  // Fill
-  if (shape.fill && shape.fill !== "none") {
-    cssProps.push(`background: ${shape.fill}`);
-  }
-
-  // Stroke
-  if (shape.stroke) {
-    cssProps.push(`border: ${shape.strokeWidth || 1}px solid ${shape.stroke}`);
-  }
+  const isCustomShape = shape.kind === "custom" && shape.svgPath && shape.svgViewBox;
+  const isLine = shape.kind === "line";
 
   // Border radius
   if (shape.kind === "ellipse") {
@@ -173,11 +193,55 @@ function renderShapeElement(element: EditableElement): string {
 
   // Lines
   if (shape.kind === "line") {
-    cssProps.push("height: 0");
-    cssProps.push(`border-top: ${shape.strokeWidth || 1}px solid ${shape.stroke || "#000"}`);
+    const halfHeight = (element.bounds.height / 2).toFixed(4);
+    cssProps.push(`top: calc(${element.bounds.y.toFixed(4)}% + ${halfHeight}% - ${strokeWidthPx / 2}px)`);
+    cssProps.push(`height: ${strokeWidthPx}px`);
+    cssProps.push("border: none");
+    cssProps.push(`background: ${shape.stroke || "#000"}`);
+    if (shape.lineCap === "round") {
+      cssProps.push(`border-radius: ${strokeWidthPx / 2}px`);
+    }
   }
 
-  return `<div data-element-id="${element.id}" style="${cssProps.join("; ")}"></div>`;
+  if (!isCustomShape && !isLine) {
+    // Fill
+    if (shape.fill && shape.fill !== "none") {
+      cssProps.push(`background: ${shape.fill}`);
+    }
+
+    // Stroke
+    if (shape.stroke) {
+      cssProps.push(`border: ${strokeWidthPx}px solid ${shape.stroke}`);
+    }
+  }
+
+  let lineEnds = "";
+  if (shape.kind === "line" && shape.stroke) {
+    const endSize = strokeWidthPx * 2;
+    const endOffset = endSize / 2;
+    if (shape.lineHead === "oval") {
+      lineEnds += `<span style="position:absolute; left:-${endOffset}px; top:50%; width:${endSize}px; height:${endSize}px; transform:translateY(-50%); border-radius:50%; background:${shape.stroke};"></span>`;
+    }
+    if (shape.lineTail === "oval") {
+      lineEnds += `<span style="position:absolute; right:-${endOffset}px; top:50%; width:${endSize}px; height:${endSize}px; transform:translateY(-50%); border-radius:50%; background:${shape.stroke};"></span>`;
+    }
+  }
+
+  let customSvg = "";
+  if (isCustomShape) {
+    const viewBox = shape.svgViewBox!;
+    const fill = shape.fill && shape.fill !== "none" ? shape.fill : "none";
+    const stroke = shape.stroke || "none";
+    const lineCap = shape.lineCap === "round" ? "round" : shape.lineCap === "square" ? "square" : "butt";
+    const strokeWidth = stroke !== "none" ? strokeWidthPx : 0;
+    customSvg = `
+      <svg viewBox="0 0 ${viewBox.width} ${viewBox.height}" preserveAspectRatio="none" style="width:100%; height:100%; display:block;">
+        <path d="${shape.svgPath}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="${lineCap}" stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>
+      </svg>
+    `.trim();
+  }
+
+  return `<div data-element-id="${element.id}" style="${cssProps.join("; ")}">${customSvg}${lineEnds}</div>`;
 }
 
 /**
@@ -227,4 +291,3 @@ export function renderSlideHtml(source: SlideSource): string {
   ${elementsHtml}
 </div>`;
 }
-

@@ -10,3 +10,5 @@ app/dist
 *.log
 .tmp
 *.pptx
+*#
+ppts/

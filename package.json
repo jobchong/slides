@@ -9,6 +9,7 @@
     "dev:client": "bunx vite dev --config app/vite.config.ts",
     "build:client": "bunx vite build --config app/vite.config.ts",
     "preview": "bunx vite preview --config app/vite.config.ts",
+    "test": "SLIDEAI_SILENCE_LOGS=true bun test",
     "typecheck:client": "bunx tsc -p app/tsconfig.json --noEmit",
     "typecheck:server": "bunx tsc -p server/tsconfig.json --noEmit"
   },

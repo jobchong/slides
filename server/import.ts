@@ -4,7 +4,7 @@ import { join, normalize } from "node:path";
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { buildGatewayUrl, buildStoredImageUrl } from "./gateway";
 import { logError, logInfo, logWarn } from "./logger";
-import { convertPdfPageToPng, convertPptxToPdf } from "./import/convert";
+import { renderSlideHtml } from "./import/render";
 
 // Import hybrid parsing modules
 import type {
@@ -13,14 +13,10 @@ import type {
   SlideRelationships,
   ImportOptions,
   SlideSource,
-  ExtractedSlide,
-  EditableElement,
 } from "./import/types";
 import { parseTheme, getDefaultTheme } from "./import/theme";
 import { parsePresentation, parseRelationships, parseSlide, resetElementIdCounter } from "./import/parser";
-import { analyzeSlide } from "./import/complexity";
 import { convertToEditable, convertBackground } from "./import/converter";
-import { convertSlideWithVision } from "./import/llm-convert";
 
 const s3Bucket = process.env.S3_BUCKET;
 const s3Region = process.env.S3_REGION || "us-east-1";
@@ -173,18 +169,8 @@ async function readPptxFile(
   }
 }
 
-async function uploadPngToGateway(
-  pngPath: string,
-  uploadDir: string,
-  req: Request
-): Promise<string> {
-  const filename = `${Date.now()}-${crypto.randomUUID()}.png`;
-  const bytes = new Uint8Array(await Bun.file(pngPath).arrayBuffer());
-  return saveUploadBytes(req, uploadDir, filename, bytes, "image/png");
-}
-
 /**
- * Main import function using hybrid approach
+ * Main import function using deterministic parsing only.
  */
 export async function* importPptx(
   pptxPath: string,
@@ -238,7 +224,6 @@ export async function* importPptx(
       : new Map<string, string>();
 
     const total = slideOrder.length;
-    let rasterConversions = 0;
 
     yield { type: "progress", status: "Parsing slides...", total };
 
@@ -247,13 +232,6 @@ export async function* importPptx(
       MAX_CONCURRENCY,
       Math.max(1, Number(effectiveOptions.concurrency || 1))
     );
-    let pdfPromise: Promise<string> | null = null;
-  const ensurePdf = () => {
-    if (!pdfPromise) {
-      pdfPromise = convertPptxToPdf(pptxPath, workDir);
-    }
-    return pdfPromise;
-  };
 
     const resolveExtractedPath = (rootDir: string, relativePath: string): string | null => {
       const normalized = normalize(relativePath).replace(/\\/g, "/");
@@ -344,19 +322,6 @@ export async function* importPptx(
 
         const extractedSlide = parseSlide(slideXml, i, slideSize, theme, slideRels);
 
-        // Analyze slide complexity
-        const analysis = analyzeSlide(extractedSlide);
-        logInfo("Slide complexity analysis", {
-          slideIndex: i,
-          canFullyReconstruct: analysis.canFullyReconstruct,
-          backgroundDecision: analysis.backgroundAnalysis.decision,
-          reconstructCount: analysis.elementsToReconstruct.length,
-          rasterizeCount: analysis.elementsToRasterize.length,
-        });
-
-        // Image URL resolver for this slide
-        const imageUrlResolver = async (rId: string) => uploadImage(rId, slideRels);
-
         // Upload images used in the slide
         for (const element of extractedSlide.elements) {
           if (element.type === "image" && element.image?.rId) {
@@ -364,46 +329,24 @@ export async function* importPptx(
           }
         }
 
-        let html: string;
-        let source: SlideSource;
-
-        // Generate screenshot for LLM visual reference
-        const pdfPath = await ensurePdf();
-        const pngPath = await convertPdfPageToPng(
-          pdfPath,
-          i,
-          workDir,
-          `slide-${i + 1}`,
-          150
-        );
-
-        // Read screenshot as base64 for vision API
-        const screenshotBytes = await Bun.file(pngPath).arrayBuffer();
-        const screenshotBase64 = Buffer.from(screenshotBytes).toString("base64");
+        if (extractedSlide.background.type === "image" && extractedSlide.background.rId) {
+          const backgroundUrl = await uploadImage(extractedSlide.background.rId, slideRels);
+          if (backgroundUrl) {
+            extractedSlide.background.imageUrl = backgroundUrl;
+          }
+        }
 
         // Convert extracted elements to editable format
         const elements = extractedSlide.elements
           .map((el) => convertToEditable(el, theme, (rId) => uploadedImages.get(rId)))
           .filter((el): el is NonNullable<typeof el> => el !== null);
 
-        // Convert background info (for prompt context, not rasterization)
-        const background = convertBackground(extractedSlide.background);
-
-        // Use vision LLM to generate HTML from screenshot + element data
-        html = await convertSlideWithVision(
-          screenshotBase64,
+        const source: SlideSource = {
+          background: convertBackground(extractedSlide.background),
           elements,
-          theme,
-          background
-        );
-
-        // Source is minimal - the HTML is fully editable, no special handling needed
-        source = {
-          background: { type: "none" },
-          elements: [],
           import: { slideIndex: i },
         };
-        rasterConversions++;
+        const html = renderSlideHtml(source);
 
         return {
           i,
@@ -483,12 +426,11 @@ export async function* importPptx(
 
     yield {
       type: "done",
-      status: `Imported ${total} slides (${rasterConversions} raster)`,
+      status: `Imported ${total} slides`,
     };
 
     logInfo("Import completed", {
       total,
-      rasterConversions,
     });
   } finally {
     // Cleanup temp files

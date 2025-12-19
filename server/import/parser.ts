@@ -116,7 +116,6 @@ export function parseSlide(
     index,
     elements,
     background,
-    complexity: { score: 0, reasons: [], recommendation: "text" }, // Will be calculated later
   };
 }
 
@@ -413,12 +412,20 @@ function parseShape(
 
   // Parse shape type
   const shapeType = parseShapeType(spPrXml);
+  const customGeometry = parseCustomGeometry(spPrXml);
 
   // Parse fill
   const fill = parseFill(spPrXml, theme);
 
   // Parse stroke
-  const { stroke, strokeWidth } = parseStroke(spPrXml, theme);
+  let { stroke, strokeWidth, lineCap, lineHead, lineTail } = parseStroke(spPrXml, theme);
+  const flipH = /<a:xfrm[^>]*flipH="1"/.test(spPrXml);
+  const flipV = /<a:xfrm[^>]*flipV="1"/.test(spPrXml);
+  if (shapeType === "line" && (flipH || flipV)) {
+    const tmp = lineHead;
+    lineHead = lineTail;
+    lineTail = tmp;
+  }
 
   // Parse text body
   const txBodyMatch = xml.match(/<p:txBody>([\s\S]*?)<\/p:txBody>/);
@@ -462,6 +469,11 @@ function parseShape(
       fill,
       stroke,
       strokeWidth,
+      lineCap,
+      lineHead,
+      lineTail,
+      svgPath: customGeometry?.path,
+      svgViewBox: customGeometry?.viewBox,
     };
   }
 
@@ -476,6 +488,51 @@ function parseShape(
   }
 
   return element;
+}
+
+function parseCustomGeometry(xml: string): { path: string; viewBox: { width: number; height: number } } | null {
+  const custMatch = xml.match(/<a:custGeom>([\s\S]*?)<\/a:custGeom>/);
+  if (!custMatch) return null;
+
+  const pathRegex = /<a:path[^>]*w="(\d+)"[^>]*h="(\d+)"[^>]*>([\s\S]*?)<\/a:path>/g;
+  let pathMatch;
+  let viewBox: { width: number; height: number } | null = null;
+  const dParts: string[] = [];
+
+  while ((pathMatch = pathRegex.exec(custMatch[1])) !== null) {
+    if (!viewBox) {
+      viewBox = { width: parseInt(pathMatch[1], 10), height: parseInt(pathMatch[2], 10) };
+    }
+    const pathXml = pathMatch[3];
+    const cmdRegex = /<a:(moveTo|lnTo|cubicBezTo)>([\s\S]*?)<\/a:\1>|<a:close\s*\/>/g;
+    let cmdMatch;
+    while ((cmdMatch = cmdRegex.exec(pathXml)) !== null) {
+      if (!cmdMatch[1] && cmdMatch[0].startsWith("<a:close")) {
+        dParts.push("Z");
+        continue;
+      }
+
+      const cmd = cmdMatch[1];
+      const content = cmdMatch[2] || "";
+      const ptRegex = /<a:pt[^>]*x="(-?\d+)"[^>]*y="(-?\d+)"/g;
+      const pts: Array<{ x: number; y: number }> = [];
+      let ptMatch;
+      while ((ptMatch = ptRegex.exec(content)) !== null) {
+        pts.push({ x: parseInt(ptMatch[1], 10), y: parseInt(ptMatch[2], 10) });
+      }
+
+      if (cmd === "moveTo" && pts[0]) {
+        dParts.push(`M ${pts[0].x} ${pts[0].y}`);
+      } else if (cmd === "lnTo" && pts[0]) {
+        dParts.push(`L ${pts[0].x} ${pts[0].y}`);
+      } else if (cmd === "cubicBezTo" && pts.length >= 3) {
+        dParts.push(`C ${pts[0].x} ${pts[0].y} ${pts[1].x} ${pts[1].y} ${pts[2].x} ${pts[2].y}`);
+      }
+    }
+  }
+
+  if (!viewBox || dParts.length === 0) return null;
+  return { path: dParts.join(" "), viewBox };
 }
 
 /**
@@ -610,7 +667,16 @@ function parseFill(xml: string, theme: Theme): string | undefined {
 /**
  * Parse stroke from spPr XML
  */
-function parseStroke(xml: string, theme: Theme): { stroke?: string; strokeWidth?: number } {
+function parseStroke(
+  xml: string,
+  theme: Theme
+): {
+  stroke?: string;
+  strokeWidth?: number;
+  lineCap?: ShapeData["lineCap"];
+  lineHead?: ShapeData["lineHead"];
+  lineTail?: ShapeData["lineTail"];
+} {
   const lnMatch = xml.match(/<a:ln([^>]*)>([\s\S]*?)<\/a:ln>/);
   if (!lnMatch) {
     return {};
@@ -632,7 +698,20 @@ function parseStroke(xml: string, theme: Theme): { stroke?: string; strokeWidth?
   const solidFillMatch = lnContent.match(/<a:solidFill>([\s\S]*?)<\/a:solidFill>/);
   const stroke = solidFillMatch ? resolveColor(solidFillMatch[1], theme) || undefined : undefined;
 
-  return { stroke, strokeWidth };
+  const capMatch = lnAttrs.match(/cap="([^"]+)"/);
+  let lineCap: ShapeData["lineCap"];
+  if (capMatch) {
+    if (capMatch[1] === "rnd") lineCap = "round";
+    if (capMatch[1] === "sq") lineCap = "square";
+    if (capMatch[1] === "flat") lineCap = "flat";
+  }
+
+  const headMatch = lnContent.match(/<a:headEnd[^>]*type="([^"]+)"/);
+  const tailMatch = lnContent.match(/<a:tailEnd[^>]*type="([^"]+)"/);
+  const lineHead = headMatch?.[1] === "oval" ? "oval" : undefined;
+  const lineTail = tailMatch?.[1] === "oval" ? "oval" : undefined;
+
+  return { stroke, strokeWidth, lineCap, lineHead, lineTail };
 }
 
 /**
@@ -640,6 +719,39 @@ function parseStroke(xml: string, theme: Theme): { stroke?: string; strokeWidth?
  */
 function parseTextBody(xml: string, theme: Theme): TextData {
   const paragraphs: Paragraph[] = [];
+  let verticalAlign: TextData["verticalAlign"];
+  let insets: TextData["insets"];
+  let anchorCtr: boolean | undefined;
+
+  const bodyPrMatch = xml.match(/<a:bodyPr([^>]*)>/) || xml.match(/<a:bodyPr([^>]*)\/>/);
+  if (bodyPrMatch) {
+    const attrs = bodyPrMatch[1] || "";
+    const lInsMatch = attrs.match(/lIns="(-?\d+)"/);
+    const rInsMatch = attrs.match(/rIns="(-?\d+)"/);
+    const tInsMatch = attrs.match(/tIns="(-?\d+)"/);
+    const bInsMatch = attrs.match(/bIns="(-?\d+)"/);
+    if (lInsMatch || rInsMatch || tInsMatch || bInsMatch) {
+      insets = {};
+      if (lInsMatch) insets.l = parseInt(lInsMatch[1], 10) / EMU_PER_POINT;
+      if (rInsMatch) insets.r = parseInt(rInsMatch[1], 10) / EMU_PER_POINT;
+      if (tInsMatch) insets.t = parseInt(tInsMatch[1], 10) / EMU_PER_POINT;
+      if (bInsMatch) insets.b = parseInt(bInsMatch[1], 10) / EMU_PER_POINT;
+    }
+    const anchorMatch = attrs.match(/anchor="([^"]+)"/);
+    if (anchorMatch) {
+      const anchor = anchorMatch[1];
+      if (anchor === "ctr") {
+        verticalAlign = "middle";
+      } else if (anchor === "b") {
+        verticalAlign = "bottom";
+      } else if (anchor === "t") {
+        verticalAlign = "top";
+      }
+    }
+    if (/\banchorCtr="1"\b/.test(attrs)) {
+      anchorCtr = true;
+    }
+  }
 
   // Parse paragraphs: <a:p>...</a:p>
   const paraRegex = /<a:p>([\s\S]*?)<\/a:p>/g;
@@ -651,7 +763,7 @@ function parseTextBody(xml: string, theme: Theme): TextData {
     }
   }
 
-  return { paragraphs };
+  return { paragraphs, verticalAlign, anchorCtr, insets };
 }
 
 /**
@@ -664,9 +776,11 @@ function parseParagraph(xml: string, theme: Theme): Paragraph | null {
   const pPrMatch = xml.match(/<a:pPr([^>]*)>([\s\S]*?)<\/a:pPr>/) || xml.match(/<a:pPr([^>]*)\/>/);
   let align: Paragraph["align"] = undefined;
   let level = 0;
+  let bullet: Paragraph["bullet"];
 
   if (pPrMatch) {
     const attrs = pPrMatch[1] || "";
+    const content = pPrMatch[2] || "";
     const alignMatch = attrs.match(/algn="([^"]+)"/);
     if (alignMatch) {
       const alignMap: Record<string, Paragraph["align"]> = {
@@ -681,6 +795,11 @@ function parseParagraph(xml: string, theme: Theme): Paragraph | null {
     const lvlMatch = attrs.match(/lvl="(\d+)"/);
     if (lvlMatch) {
       level = parseInt(lvlMatch[1]);
+    }
+
+    const buCharMatch = content.match(/<a:buChar[^>]*char="([^"]+)"/);
+    if (buCharMatch && !content.includes("<a:buNone")) {
+      bullet = { type: "bullet", char: buCharMatch[1] };
     }
   }
 
@@ -703,6 +822,7 @@ function parseParagraph(xml: string, theme: Theme): Paragraph | null {
     runs,
     align,
     level,
+    bullet,
   };
 }
 

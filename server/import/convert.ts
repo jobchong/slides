@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { join, basename } from "node:path";
+import { pathToFileURL } from "node:url";
+import { existsSync } from "node:fs";
 
 async function runCommand(
   command: string,
@@ -8,16 +10,28 @@ async function runCommand(
   errorPrefix: string
 ): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    const proc = spawn(command, args);
+    const proc = spawn(command, args, {
+      env: {
+        ...process.env,
+        SAL_USE_VCLPLUGIN: "svp",
+        SAL_DISABLE_OPENGL: "true",
+        LIBO_HEADLESS: "1",
+      },
+    });
     let stderr = "";
+    let stdout = "";
 
     proc.stderr.on("data", (data) => {
       stderr += data.toString();
     });
+    proc.stdout.on("data", (data) => {
+      stdout += data.toString();
+    });
 
     proc.on("close", (code) => {
       if (code !== 0) {
-        reject(new Error(`${errorPrefix}: ${stderr}`));
+        const detail = [stderr.trim(), stdout.trim()].filter(Boolean).join("\n");
+        reject(new Error(`${errorPrefix}: ${detail}`));
         return;
       }
       resolve();
@@ -36,11 +50,28 @@ export async function convertPptxToPdf(
   await mkdir(outputDir, { recursive: true });
   const pptxName = basename(pptxPath, ".pptx");
   const pdfPath = join(outputDir, `${pptxName}.pdf`);
+  const profileDir = join(outputDir, ".lo-profile");
+  await mkdir(profileDir, { recursive: true });
+  const profileUrl = pathToFileURL(profileDir).href;
+  const macSoffice = "/Applications/LibreOffice.app/Contents/MacOS/soffice";
+  const sofficeCommand = existsSync(macSoffice) ? macSoffice : "soffice";
 
   if (!(await Bun.file(pdfPath).exists())) {
     await runCommand(
-      "soffice",
-      ["--headless", "--convert-to", "pdf", "--outdir", outputDir, pptxPath],
+      sofficeCommand,
+      [
+        "--headless",
+        "--nologo",
+        "--nolockcheck",
+        "--nodefault",
+        "--norestore",
+        `-env:UserInstallation=${profileUrl}`,
+        "--convert-to",
+        "pdf",
+        "--outdir",
+        outputDir,
+        pptxPath,
+      ],
       "LibreOffice conversion failed"
     );
   }
@@ -79,4 +110,3 @@ export async function convertPdfPageToPng(
 
   return outPath;
 }
-

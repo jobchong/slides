@@ -4,99 +4,7 @@ This file provides guidance for Claude Code when working on this repository.
 
 ## Project Overview
 
-**Slide AI** is an LLM-powered presentation builder. Users describe slides in chat, and Claude/GPT generates HTML that renders directly in the browser. Features include multi-slide support, voice input (Groq Whisper), and image uploads (S3 or disk storage).
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|------------|
-| Frontend | React 18, Vite 6, TypeScript 5.6 (strict) |
-| Backend | Bun runtime (port 4000) |
-| Styling | Plain CSS with CSS variables |
-| LLM | Anthropic Claude API, OpenAI API, Google Gemini API |
-| Voice | Groq Whisper API |
-| Storage | Disk (default) or AWS S3 |
-
-## Project Structure
-
-```
-app/                    # React frontend (Vite)
-  src/
-    components/         # React components + paired .css files
-    hooks/              # Custom React hooks
-    App.tsx             # Root component with all state
-    api.ts              # Server API calls
-    types.ts            # TypeScript interfaces
-    models.ts           # LLM model options
-server/                 # Bun backend
-  server.ts             # HTTP routes, file uploads
-  llm.ts                # Anthropic/OpenAI/Google integration
-  groq.ts               # Whisper transcription
-  uploads/              # Disk-based image storage
-```
-
-## Commands
-
-```bash
-# Install dependencies
-bun install
-
-# Development (runs both client and server)
-bun run dev
-
-# Development (separate processes)
-bun run dev:server      # Server on port 4000
-bun run dev:client      # Vite on port 5173
-
-# Type checking
-bun run typecheck:client
-bun run typecheck:server
-
-# Build for production
-bun run build:client
-
-# Preview production build
-bun run preview
-```
-
-## Environment Variables
-
-### Frontend (prefix with `VITE_`)
-- `VITE_MODEL_API_KEY` - API key for selected model
-- `VITE_ANTHROPIC_API_KEY` - Fallback Anthropic key
-- `VITE_OPENAI_API_KEY` - Fallback OpenAI key
-- `VITE_MODEL_SERVICE_URL` - Model service base URL (default: http://localhost:4000)
-- `VITE_UPLOAD_API_URL` - Deprecated alias for the model service base (default: http://localhost:4000)
-- `VITE_SERVER_URL` - Voice endpoint URL (default: http://localhost:4000)
-
-### Backend
-- `PORT` - Server port (default: 4000)
-- `MODEL_API_KEY` / `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` - LLM API keys
-- `GROQ_API_KEY` - Required for voice transcription
-- `S3_BUCKET` - Enable S3 storage (optional)
-- `S3_PUBLIC_BASE_URL` - If set, uploads return direct S3/CDN URLs (e.g. `https://.../uploads`) instead of `/images/{filename}` redirects
-- `UPLOAD_DIR` - Disk upload directory (default: server/uploads)
- - PPTX import concurrency is currently fixed at `8` in `POST /api/import` (not user-configurable)
-
-## Architecture Notes
-
-### State Management
-- All state in `App.tsx`: `slides[]`, `currentSlideIndex`, `messages[]`, `model`, `isLoading`
-- Slides are `{ id: string; html: string }` objects
-- No persistence (state resets on refresh)
-
-### LLM Contract
-The system prompt in `server/llm.ts` instructs models to:
-- Output ONLY raw HTML, no markdown or code fences
-- Use absolute positioning with percentage-based top/left/right/bottom
-- Use `px` for font-size, width, height
-- Return COMPLETE slide HTML on every turn (not diffs)
-- Use `<img>` tags for images (no SVG or data URIs)
-
-### Key Design Decisions
-- **HTML-native**: LLM outputs raw HTML with inline styles
-- **Whole-slide updates**: Complete HTML on every turn
-- **Conversation-first**: Users edit via chat, full context always included
+Primary docs now live in `docs/guide.md`. This file stays focused on coding conventions and agent-specific guidance.
 
 ## Coding Conventions
 
@@ -140,7 +48,7 @@ The system prompt in `server/llm.ts` instructs models to:
 
 ## Documentation
 
-- `README.md` - Quick start guide
-- `app/design.md` - Architecture deep dive
-- `slides.md` - Multi-slide feature spec
-- `speech.md` - Voice input design
+- `docs/guide.md` - consolidated overview (setup, env, architecture, specs)
+- `app/design.md` - architecture deep dive
+- `docs/slides.md` - multi-slide feature spec
+- `docs/speech.md` - voice input design

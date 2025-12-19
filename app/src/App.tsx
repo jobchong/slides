@@ -8,7 +8,7 @@ import { ImportProgress } from "./components/ImportProgress";
 import { useSlideNavigation } from "./hooks/useSlideNavigation";
 import { callModelStream, importPptx, type ImportProgress as ImportProgressType } from "./api";
 import { MODEL_OPTIONS } from "./models";
-import { htmlToScene, sceneToHtml } from "./render/scene";
+import { sceneToHtml } from "./render/scene";
 import "./App.css";
 
 function createEmptySource(): SlideSource {
@@ -51,13 +51,7 @@ export default function App() {
     setSlides((prev) =>
       prev.map((slide, i) => {
         if (i !== currentSlideIndex) return slide;
-        try {
-          const source = htmlToScene(html);
-          return { ...slide, source, html: sceneToHtml(source) };
-        } catch (err) {
-          console.warn("Failed to parse slide HTML into scene graph:", err);
-          return { ...slide, html };
-        }
+        return { ...slide, html, source: undefined };
       })
     );
   };

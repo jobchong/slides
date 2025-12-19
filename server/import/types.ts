@@ -58,6 +58,14 @@ export interface Paragraph {
 
 export interface TextData {
   paragraphs: Paragraph[];
+  verticalAlign?: "top" | "middle" | "bottom";
+  anchorCtr?: boolean;
+  insets?: {
+    l?: number;
+    r?: number;
+    t?: number;
+    b?: number;
+  };
 }
 
 // Image data
@@ -72,6 +80,11 @@ export interface ShapeData {
   fill?: string;         // hex color or "none"
   stroke?: string;       // hex color
   strokeWidth?: number;  // points
+  lineCap?: "round" | "square" | "flat";
+  lineHead?: "oval" | "none";
+  lineTail?: "oval" | "none";
+  svgPath?: string;
+  svgViewBox?: { width: number; height: number };
 }
 
 // Table data
@@ -107,23 +120,6 @@ export interface ExtractedElement {
   table?: TableData;
 }
 
-// Conversion decision for an element
-export type ConversionDecision = "reconstruct" | "rasterize";
-
-// Analysis result for an element
-export interface ElementAnalysis {
-  element: ExtractedElement;
-  decision: ConversionDecision;
-  reasons: string[];
-}
-
-// Background analysis result
-export interface BackgroundAnalysis {
-  decision: "reconstruct" | "rasterize-master" | "rasterize-background";
-  css?: string;                // CSS for reconstructed backgrounds
-  reasons: string[];
-}
-
 // Editable element for frontend (converted from ExtractedElement)
 export interface EditableTextStyle {
   fontFamily: string;
@@ -138,6 +134,13 @@ export interface EditableTextStyle {
 export interface EditableTextElement {
   content: string;
   style: EditableTextStyle;
+  anchorCtr?: boolean;
+  insets?: {
+    l?: number;
+    r?: number;
+    t?: number;
+    b?: number;
+  };
 }
 
 export interface EditableImageElement {
@@ -153,6 +156,11 @@ export interface EditableShapeElement {
   strokeWidth?: number;
   borderRadius?: number;
   svg?: string;
+  lineCap?: "round" | "square" | "flat";
+  lineHead?: "oval" | "none";
+  lineTail?: "oval" | "none";
+  svgPath?: string;
+  svgViewBox?: { width: number; height: number };
 }
 
 export interface EditableElement {
@@ -210,19 +218,11 @@ export interface Background {
   };
 }
 
-// Complexity scoring
-export interface ComplexityScore {
-  score: number;
-  reasons: string[];
-  recommendation: "text" | "vision";
-}
-
 // Extracted slide
 export interface ExtractedSlide {
   index: number;
   elements: ExtractedElement[];
   background: Background;
-  complexity: ComplexityScore;
 }
 
 // Theme colors
@@ -272,19 +272,9 @@ export interface ImportProgress {
   html?: string;
   source?: SlideSource;        // Structured data for editing
   error?: string;
-  complexity?: ComplexityScore;
 }
 
 // Import result
-export interface ImportResult {
-  slides: Array<{ id: string; html: string }>;
-  stats: {
-    totalSlides: number;
-    textConversions: number;
-    visionConversions: number;
-  };
-}
-
 // PPTX structure
 export interface PptxContent {
   slideSize: SlideSize;

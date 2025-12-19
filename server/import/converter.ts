@@ -2,27 +2,37 @@
 
 import type {
   ExtractedElement,
-  ExtractedSlide,
   EditableElement,
   EditableTextElement,
   EditableTextStyle,
   EditableImageElement,
   EditableShapeElement,
   SlideBackground,
-  SlideSource,
   Theme,
   Background,
   TextData,
   ShapeData,
 } from "./types";
-import { analyzeSlide, analyzeBackground } from "./complexity";
 
 /**
  * Convert TextData to plain text content
  */
 function extractTextContent(textData: TextData): string {
+  const normalizeBullet = (char: string): string => {
+    if (char === "\uf0b7" || char === "") return "•";
+    if (/^[\x00-\x7F]$/.test(char)) return char;
+    return "•";
+  };
+
   return textData.paragraphs
-    .map(p => p.runs.map(r => r.text).join(""))
+    .map(p => {
+      const content = p.runs.map(r => r.text).join("");
+      if (p.bullet?.type === "bullet") {
+        const bullet = p.bullet.char ? normalizeBullet(p.bullet.char) : "•";
+        return `${bullet} ${content}`;
+      }
+      return content;
+    })
     .join("\n");
 }
 
@@ -39,16 +49,20 @@ function extractTextStyle(textData: TextData, theme: Theme): EditableTextStyle {
   const mappedAlign: "left" | "center" | "right" =
     align === "center" ? "center" :
     align === "right" ? "right" :
+    textData.anchorCtr ? "center" :
     "left";
+
+  const pointsToPx = 96 / 72;
+  const fontSizePoints = firstRun?.fontSize || 18;
 
   return {
     fontFamily: firstRun?.fontFamily || theme.fonts.minorLatin || "Arial",
-    fontSize: firstRun?.fontSize || 18,
+    fontSize: fontSizePoints * pointsToPx,
     fontWeight: firstRun?.bold ? "bold" : "normal",
     fontStyle: firstRun?.italic ? "italic" : "normal",
     color: firstRun?.color || theme.colors.dk1 || "#000000",
     align: mappedAlign,
-    verticalAlign: "top", // Default, PPTX doesn't always specify
+    verticalAlign: textData.verticalAlign || "top",
   };
 }
 
@@ -97,6 +111,8 @@ export function convertToEditable(
       text: {
         content: extractTextContent(element.text),
         style: extractTextStyle(element.text, theme),
+        anchorCtr: element.text.anchorCtr,
+        insets: element.text.insets,
       },
     };
 
@@ -141,6 +157,11 @@ export function convertToEditable(
         stroke: element.shape.stroke,
         strokeWidth: element.shape.strokeWidth,
         borderRadius: element.shape.shapeType === "roundRect" ? 8 : undefined,
+        lineCap: element.shape.lineCap,
+        lineHead: element.shape.lineHead,
+        lineTail: element.shape.lineTail,
+        svgPath: element.shape.svgPath,
+        svgViewBox: element.shape.svgViewBox,
       },
     };
   }
@@ -182,84 +203,4 @@ export function convertBackground(
 
   // Fallback to none
   return { type: "none" };
-}
-
-/**
- * Build SlideSource from an ExtractedSlide
- */
-export function buildSlideSource(
-  slide: ExtractedSlide,
-  theme: Theme,
-  options: {
-    backgroundUrl?: string;
-    screenshotUrl?: string;
-    originalFile?: string;
-    imageUrlResolver?: (rId: string) => string | undefined;
-  } = {}
-): SlideSource {
-  const analysis = analyzeSlide(slide);
-
-  // Convert background
-  const needsRasterizedBackground =
-    analysis.backgroundAnalysis.decision !== "reconstruct";
-  const background = convertBackground(
-    slide.background,
-    needsRasterizedBackground ? options.backgroundUrl : undefined
-  );
-
-  // Convert elements that should be reconstructed
-  const elements: EditableElement[] = [];
-  for (const { element } of analysis.elementsToReconstruct) {
-    const editable = convertToEditable(element, theme, options.imageUrlResolver);
-    if (editable) {
-      elements.push(editable);
-    }
-  }
-
-  return {
-    background,
-    elements,
-    import: {
-      originalFile: options.originalFile,
-      slideIndex: slide.index,
-      screenshot: options.screenshotUrl,
-    },
-  };
-}
-
-/**
- * Build SlideSource for a fully rasterized slide (legacy mode)
- */
-export function buildRasterizedSlideSource(
-  slide: ExtractedSlide,
-  rasterUrl: string,
-  theme: Theme,
-  options: {
-    screenshotUrl?: string;
-    originalFile?: string;
-    imageUrlResolver?: (rId: string) => string | undefined;
-  } = {}
-): SlideSource {
-  // All elements are overlaid on the raster, but we still extract them for editing
-  const elements: EditableElement[] = [];
-
-  for (const element of slide.elements) {
-    // Only include text and images - shapes are part of the raster
-    if (element.type === "text" || element.type === "image") {
-      const editable = convertToEditable(element, theme, options.imageUrlResolver);
-      if (editable) {
-        elements.push(editable);
-      }
-    }
-  }
-
-  return {
-    background: { type: "rasterized", url: rasterUrl },
-    elements,
-    import: {
-      originalFile: options.originalFile,
-      slideIndex: slide.index,
-      screenshot: options.screenshotUrl,
-    },
-  };
 }
