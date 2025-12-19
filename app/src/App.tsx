@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import type { Message, Slide } from "./types";
+import type { Message, Slide, SlideSource } from "./types";
 import { SlideView } from "./components/SlideView";
 import { ChatInput } from "./components/ChatInput";
 import { ThumbnailPanel } from "./components/ThumbnailPanel";
@@ -8,10 +8,19 @@ import { ImportProgress } from "./components/ImportProgress";
 import { useSlideNavigation } from "./hooks/useSlideNavigation";
 import { callModelStream, importPptx, type ImportProgress as ImportProgressType } from "./api";
 import { MODEL_OPTIONS } from "./models";
+import { htmlToScene, sceneToHtml } from "./render/scene";
 import "./App.css";
 
+function createEmptySource(): SlideSource {
+  return { background: { type: "none" }, elements: [] };
+}
+
+function buildSlideFromSource(source: SlideSource): Slide {
+  return { id: crypto.randomUUID(), html: sceneToHtml(source), source };
+}
+
 function createSlide(): Slide {
-  return { id: crypto.randomUUID(), html: "" };
+  return buildSlideFromSource(createEmptySource());
 }
 
 export default function App() {
@@ -30,11 +39,26 @@ export default function App() {
 
   const currentSlide = slides[currentSlideIndex];
 
-  const updateCurrentSlide = (html: string) => {
+  const updateCurrentSlideHtml = (html: string) => {
     setSlides((prev) =>
       prev.map((slide, i) =>
         i === currentSlideIndex ? { ...slide, html } : slide
       )
+    );
+  };
+
+  const commitCurrentSlideHtml = (html: string) => {
+    setSlides((prev) =>
+      prev.map((slide, i) => {
+        if (i !== currentSlideIndex) return slide;
+        try {
+          const source = htmlToScene(html);
+          return { ...slide, source, html: sceneToHtml(source) };
+        } catch (err) {
+          console.warn("Failed to parse slide HTML into scene graph:", err);
+          return { ...slide, html };
+        }
+      })
     );
   };
 
@@ -52,8 +76,10 @@ export default function App() {
         newMessages,
         currentSlide.html,
         model,
-        (partialHtml) => updateCurrentSlide(partialHtml)
+        (partialHtml) => updateCurrentSlideHtml(partialHtml)
       );
+
+      commitCurrentSlideHtml(result.html);
 
       if (result.clarification) {
         // LLM is asking for clarification - show as assistant message
@@ -79,7 +105,7 @@ export default function App() {
       { role: "user", content: transcription },
       { role: "assistant", content: "Done." },
     ]);
-    updateCurrentSlide(html);
+    commitCurrentSlideHtml(html);
   };
 
   const handleAddSlide = () => {
@@ -165,14 +191,20 @@ export default function App() {
         },
         (slide) => {
           if (importAbortRef.current) return;
-          importedSlides.push(slide);
+          const hasRenderableSource =
+            !!slide.source &&
+            (slide.source.elements.length > 0 || slide.source.background.type !== "none");
+          const normalizedSlide = hasRenderableSource
+            ? { ...slide, html: sceneToHtml(slide.source!) }
+            : slide;
+          importedSlides.push(normalizedSlide);
           // Update slides as they come in so user sees progress
           setSlides((prev) => {
             // If first import and only empty slide exists, replace it
             if (prev.length === 1 && prev[0].html === "" && importedSlides.length === 1) {
-              return [slide];
+              return [normalizedSlide];
             }
-            return [...prev, slide];
+            return [...prev, normalizedSlide];
           });
         }
       );

@@ -28,10 +28,12 @@ The slide container has position: relative, so use position: absolute on element
 Positioning:
 - Use position: absolute on all elements
 - Use percentages for top/left/right/bottom (e.g., top: 10%, left: 5%)
-- Center elements: top: 50%, left: 50%, transform: translate(-50%, -50%)
+- Do NOT use translate() to center elements; set explicit top/left and width/height instead
+- Only use transform for rotation (rotate(...deg)) if needed
 
 Sizing:
-- Use px for width/height and font-size
+- Prefer percentages for width/height to match the slide container
+- Use px for font-size
 - Common font sizes: 14, 16, 18, 24, 32, 48, 64, 80px
 
 Shapes:
@@ -49,7 +51,7 @@ Colors:
 
 ## Example output
 
-<div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 64px; font-weight: 700; color: #1a1a2e;">
+<div style="position: absolute; top: 40%; left: 20%; width: 60%; height: 20%; font-size: 64px; font-weight: 700; color: #1a1a2e;">
   Hello World
 </div>
 <div style="position: absolute; top: 5%; right: 5%; width: 80px; height: 80px; border-radius: 50%; background-color: #e94560;">
