@@ -11,7 +11,7 @@ interface ChatInputProps {
   messages: Message[];
   slideHtml: string;
   onSend: (message: string) => void;
-  onVoiceMessage: (transcription: string, html: string) => void;
+  onVoiceMessage: (transcription: string, html: string, clarification: string | null) => void;
   isLoading: boolean;
   model: string;
   onModelChange: (model: string) => void;
@@ -195,7 +195,7 @@ export function ChatInput({
       setRecordingState("uploading");
       setAudioError(null);
 
-      const { html, transcription } = await sendVoiceMessage(
+      const { html, transcription, clarification } = await sendVoiceMessage(
         audioBlob,
         messages,
         slideHtml,
@@ -203,7 +203,7 @@ export function ChatInput({
       );
 
       setRecordingState("processing");
-      onVoiceMessage(transcription, html);
+      onVoiceMessage(transcription, html, clarification);
 
       // Reset to idle after successful processing
       setRecordingState("idle");
@@ -224,6 +224,17 @@ export function ChatInput({
   useEffect(() => {
     textInputRef.current?.focus();
   }, []);
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (recordingState !== "idle" && recordingState !== "error") return;
+    const lastMessage = messages[messages.length - 1];
+    if (!lastMessage || lastMessage.role !== "assistant") return;
+
+    requestAnimationFrame(() => {
+      textInputRef.current?.focus();
+    });
+  }, [isLoading, messages, recordingState]);
 
   // Handle ESC key to cancel recording
   useEffect(() => {

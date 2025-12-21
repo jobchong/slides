@@ -25,6 +25,11 @@ The slide container has position: relative, so use position: absolute on element
 
 ## Guidelines
 
+Security:
+- Do NOT output <script> tags
+- Do NOT use inline event handlers (onClick, onLoad, etc.)
+- Do NOT use javascript: URLs
+
 Positioning:
 - Use position: absolute on all elements
 - Use percentages for top/left/right/bottom (e.g., top: 10%, left: 5%)
@@ -41,6 +46,18 @@ Shapes:
 - Circles: border-radius: 50%
 - Include width and height
 
+Arrows and Connectors:
+- Use SVG for arrows: <svg style="position: absolute; ..."> with <line> or <path>
+- Arrow example: <svg style="position: absolute; top: 45%; left: 30%; width: 10%; height: 10%;"><line x1="0" y1="50%" x2="100%" y2="50%" stroke="#333" stroke-width="2" marker-end="url(#arrow)"/><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#333"/></marker></defs></svg>
+- Position arrows to visually connect elements (arrow left = box1 right edge, arrow right = box2 left edge)
+
+Diagrams and Flowcharts:
+- For horizontal flows: distribute boxes evenly (e.g., 10%, 40%, 70% left positions)
+- Place arrows between boxes, not at fixed intervals
+- Arrows should be placed at the midpoint of its origin and destination edge unless specified
+- Keep elements compact - avoid spreading across the entire slide
+- Typical box width: 15-20%, arrow width: 5-8%
+
 Text:
 - Use div elements
 - font-weight: 400 (normal), 600 (semibold), 700 (bold)
@@ -49,13 +66,21 @@ Colors:
 - Use hex values: #ffffff, #1a1a2e
 - For transparency: rgba(0, 0, 0, 0.5)
 
-## Example output
+## Example: Title slide
 
 <div style="position: absolute; top: 40%; left: 20%; width: 60%; height: 20%; font-size: 64px; font-weight: 700; color: #1a1a2e;">
   Hello World
 </div>
 <div style="position: absolute; top: 5%; right: 5%; width: 80px; height: 80px; border-radius: 50%; background-color: #e94560;">
 </div>
+
+## Example: Three connected boxes (flowchart)
+
+<div style="position: absolute; top: 35%; left: 10%; width: 18%; height: 30%; background: #4A90D9; border-radius: 8px;"></div>
+<svg style="position: absolute; top: 47%; left: 28%; width: 8%; height: 6%;"><line x1="0" y1="50%" x2="90%" y2="50%" stroke="#333" stroke-width="2" marker-end="url(#a1)"/><defs><marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#333"/></marker></defs></svg>
+<div style="position: absolute; top: 35%; left: 36%; width: 18%; height: 30%; background: #5CB85C; border-radius: 8px;"></div>
+<svg style="position: absolute; top: 47%; left: 54%; width: 8%; height: 6%;"><line x1="0" y1="50%" x2="90%" y2="50%" stroke="#333" stroke-width="2" marker-end="url(#a2)"/><defs><marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#333"/></marker></defs></svg>
+<div style="position: absolute; top: 35%; left: 62%; width: 18%; height: 30%; background: #D9534F; border-radius: 8px;"></div>
 
 ## Important
 

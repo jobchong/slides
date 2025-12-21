@@ -40,6 +40,12 @@ const s3ForcePathStyle = process.env.S3_FORCE_PATH_STYLE === "true";
 const s3SignedUrlExpires =
   Number(process.env.S3_SIGNED_URL_EXPIRES) || 60 * 60; // 1h default
 const devClientUrl = process.env.CLIENT_DEV_URL || "http://localhost:5173";
+const enableDevProxy = process.env.NODE_ENV !== "production";
+const corsAllowlist = new Set([
+  "https://slidespell.com",
+  "https://www.slidespell.com",
+  "http://localhost:5173",
+]);
 
 await mkdir(uploadDir, { recursive: true });
 
@@ -70,11 +76,78 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
+function getCorsOrigin(req: Request): string | null {
+  const origin = req.headers.get("Origin");
+  if (!origin) return null;
+  return corsAllowlist.has(origin) ? origin : null;
+}
+
+function applyCors(req: Request, res: Response): Response {
+  const origin = getCorsOrigin(req);
+  if (!origin) return res;
+  const headers = new Headers(res.headers);
+  headers.set("Access-Control-Allow-Origin", origin);
+  headers.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  headers.set("Access-Control-Allow-Headers", "Content-Type");
+  headers.set("Access-Control-Max-Age", "86400");
+  headers.set("Vary", "Origin");
+  return new Response(res.body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers,
+  });
+}
+
+async function sniffImageType(file: File): Promise<string | null> {
+  const header = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+  if (header.length >= 3 && header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff) {
+    return "image/jpeg";
+  }
+  if (
+    header.length >= 8 &&
+    header[0] === 0x89 &&
+    header[1] === 0x50 &&
+    header[2] === 0x4e &&
+    header[3] === 0x47 &&
+    header[4] === 0x0d &&
+    header[5] === 0x0a &&
+    header[6] === 0x1a &&
+    header[7] === 0x0a
+  ) {
+    return "image/png";
+  }
+  if (
+    header.length >= 6 &&
+    header[0] === 0x47 &&
+    header[1] === 0x49 &&
+    header[2] === 0x46 &&
+    header[3] === 0x38 &&
+    (header[4] === 0x37 || header[4] === 0x39) &&
+    header[5] === 0x61
+  ) {
+    return "image/gif";
+  }
+  if (
+    header.length >= 12 &&
+    header[0] === 0x52 &&
+    header[1] === 0x49 &&
+    header[2] === 0x46 &&
+    header[3] === 0x46 &&
+    header[8] === 0x57 &&
+    header[9] === 0x45 &&
+    header[10] === 0x42 &&
+    header[11] === 0x50
+  ) {
+    return "image/webp";
+  }
+  return null;
+}
+
 async function handleRequest(req: Request): Promise<Response> {
   const url = new URL(req.url);
 
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204 });
+    return applyCors(req, new Response(null, { status: 204 }));
   }
 
   if (req.method === "GET" && url.pathname.startsWith("/images")) {
@@ -87,12 +160,16 @@ async function handleRequest(req: Request): Promise<Response> {
   const route = routes[routeKey];
   if (route) {
     logInfo("Route hit", { route: routeKey });
-    return route(req, url);
+    const response = await route(req, url);
+    return applyCors(req, response);
   }
 
   const fallback = fallbackRoute(url, req.method);
-  if (fallback) return fallback(req, url);
-  return jsonResponse({ error: "Not found" }, 404);
+  if (fallback) {
+    const response = await fallback(req, url);
+    return applyCors(req, response);
+  }
+  return applyCors(req, jsonResponse({ error: "Not found" }, 404));
 }
 
 type RouteHandler = (req: Request, url: URL) => Promise<Response> | Response;
@@ -126,6 +203,16 @@ async function handleUpload(req: Request): Promise<Response> {
       name: file.name,
     });
     return jsonResponse({ error: `Unsupported type ${file.type}` }, 400);
+  }
+
+  const sniffedType = await sniffImageType(file);
+  if (!sniffedType || sniffedType !== file.type) {
+    logWarn("Upload rejected due to mismatched content type.", {
+      type: file.type,
+      sniffedType,
+      name: file.name,
+    });
+    return jsonResponse({ error: "File content does not match type." }, 400);
   }
 
   if (file.size > maxUploadBytes) {
@@ -504,7 +591,7 @@ async function handleImageGet(url: URL): Promise<Response> {
 }
 
 function fallbackRoute(url: URL, method: string): RouteHandler | null {
-  if (method !== "GET") return null;
+  if (method !== "GET" || !enableDevProxy) return null;
   return async () => {
     const target = `${devClientUrl}${url.pathname}${url.search}`;
     const proxied = await fetch(target);

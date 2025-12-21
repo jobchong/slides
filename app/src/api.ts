@@ -138,12 +138,22 @@ export async function callModelStream(
   return clarifyExtractor.finalize();
 }
 
+function extractClarification(raw: string): { html: string; clarification: string | null } {
+  const match = raw.match(/<clarify>([\s\S]*?)<\/clarify>/);
+  if (match) {
+    const clarification = match[1].trim();
+    const html = raw.replace(/<clarify>[\s\S]*?<\/clarify>/g, "").trim();
+    return { html, clarification };
+  }
+  return { html: raw, clarification: null };
+}
+
 export async function sendVoiceMessage(
   audioBlob: Blob,
   messages: Message[],
   currentHtml: string,
   model: string
-): Promise<{ html: string; transcription: string }> {
+): Promise<{ html: string; transcription: string; clarification: string | null }> {
   const serverUrl = import.meta.env.VITE_SERVER_URL || "http://localhost:4000";
 
   // Determine file extension based on MIME type
@@ -174,7 +184,9 @@ export async function sendVoiceMessage(
     throw new Error(error.error || "Failed to process voice message");
   }
 
-  return await response.json();
+  const data = await response.json();
+  const { html, clarification } = extractClarification(data.html);
+  return { html, transcription: data.transcription, clarification };
 }
 
 export interface ImportProgress {

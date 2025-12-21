@@ -9,6 +9,7 @@ import { useSlideNavigation } from "./hooks/useSlideNavigation";
 import { callModelStream, importPptx, type ImportProgress as ImportProgressType } from "./api";
 import { MODEL_OPTIONS } from "./models";
 import { sceneToHtml } from "./render/scene";
+import { sanitizeHtml } from "./sanitize";
 import "./App.css";
 
 function createEmptySource(): SlideSource {
@@ -42,7 +43,7 @@ export default function App() {
   const updateCurrentSlideHtml = (html: string) => {
     setSlides((prev) =>
       prev.map((slide, i) =>
-        i === currentSlideIndex ? { ...slide, html } : slide
+        i === currentSlideIndex ? { ...slide, html: sanitizeHtml(html) } : slide
       )
     );
   };
@@ -51,7 +52,7 @@ export default function App() {
     setSlides((prev) =>
       prev.map((slide, i) => {
         if (i !== currentSlideIndex) return slide;
-        return { ...slide, html, source: undefined };
+        return { ...slide, html: sanitizeHtml(html), source: undefined };
       })
     );
   };
@@ -93,12 +94,20 @@ export default function App() {
     }
   };
 
-  const handleVoiceMessage = (transcription: string, html: string) => {
-    setMessages([
-      ...messages,
-      { role: "user", content: transcription },
-      { role: "assistant", content: "Done." },
-    ]);
+  const handleVoiceMessage = (transcription: string, html: string, clarification: string | null) => {
+    if (clarification) {
+      setMessages([
+        ...messages,
+        { role: "user", content: transcription },
+        { role: "assistant", content: clarification },
+      ]);
+    } else {
+      setMessages([
+        ...messages,
+        { role: "user", content: transcription },
+        { role: "assistant", content: "Done." },
+      ]);
+    }
     commitCurrentSlideHtml(html);
   };
 
