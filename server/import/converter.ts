@@ -116,13 +116,20 @@ export function convertToEditable(
       },
     };
 
-    // If shape has fill, include it (colored text box)
-    if (element.shape && element.shape.fill && element.shape.fill !== "none") {
+    // Preserve shape data for text when it affects rendering.
+    if (
+      element.shape &&
+      (element.shape.fill && element.shape.fill !== "none" ||
+        element.shape.stroke ||
+        element.shape.shapeType === "custom")
+    ) {
       textElement.shape = {
         kind: mapShapeKind(element.shape.shapeType),
         fill: element.shape.fill,
         stroke: element.shape.stroke,
         strokeWidth: element.shape.strokeWidth,
+        svgPath: element.shape.svgPath,
+        svgViewBox: element.shape.svgViewBox,
       };
     }
 

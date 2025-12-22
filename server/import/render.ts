@@ -95,17 +95,20 @@ function renderTextElement(element: EditableElement): string {
 
   // Add shape background if present
   if (element.shape) {
-    if (element.shape.fill && element.shape.fill !== "none") {
-      cssProps.push(`background: ${element.shape.fill}`);
-    }
-    if (element.shape.stroke) {
-      cssProps.push(`border: ${element.shape.strokeWidth || 1}px solid ${element.shape.stroke}`);
-    }
-    if (element.shape.borderRadius) {
-      cssProps.push(`border-radius: ${element.shape.borderRadius}px`);
-    }
-    if (element.shape.kind === "ellipse") {
-      cssProps.push("border-radius: 50%");
+    const isCustomShape = element.shape.kind === "custom";
+    if (!isCustomShape) {
+      if (element.shape.fill && element.shape.fill !== "none") {
+        cssProps.push(`background: ${element.shape.fill}`);
+      }
+      if (element.shape.stroke) {
+        cssProps.push(`border: ${element.shape.strokeWidth || 1}px solid ${element.shape.stroke}`);
+      }
+      if (element.shape.borderRadius) {
+        cssProps.push(`border-radius: ${element.shape.borderRadius}px`);
+      }
+      if (element.shape.kind === "ellipse") {
+        cssProps.push("border-radius: 50%");
+      }
     }
   }
 
@@ -134,8 +137,27 @@ function renderTextElement(element: EditableElement): string {
   }
 
   const content = escapeHtml(text.content).replace(/\n/g, "<br>");
+  const shape = element.shape;
+  const hasCustomShape = shape?.kind === "custom" && shape.svgPath && shape.svgViewBox;
+  let customSvg = "";
+  if (hasCustomShape && shape) {
+    const viewBox = shape.svgViewBox!;
+    const fill = shape.fill && shape.fill !== "none" ? shape.fill : "none";
+    const stroke = shape.stroke || "none";
+    const strokeWidth = stroke !== "none" ? (shape.strokeWidth || 1) * pointsToPx : 0;
+    customSvg = `
+      <svg viewBox="0 0 ${viewBox.width} ${viewBox.height}" preserveAspectRatio="none" style="position:absolute; inset:0; width:100%; height:100%; display:block; z-index:0;">
+        <path d="${shape.svgPath}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>
+      </svg>
+    `.trim();
+    cssProps.push("background: none");
+  }
 
-  return `<div data-element-id="${element.id}" style="${cssProps.join("; ")}">${content}</div>`;
+  const wrappedContent = hasCustomShape
+    ? `<span style="position: relative; z-index: 1;">${content}</span>`
+    : content;
+
+  return `<div data-element-id="${element.id}" style="${cssProps.join("; ")}">${customSvg}${wrappedContent}</div>`;
 }
 
 /**
@@ -168,16 +190,37 @@ function renderShapeElement(element: EditableElement): string {
   const pointsToPx = 96 / 72;
   const strokeWidthPx = (shape.strokeWidth || 1) * pointsToPx;
 
-  const cssProps: string[] = [
-    "position: absolute",
-    `left: ${element.bounds.x.toFixed(4)}%`,
-    `top: ${element.bounds.y.toFixed(4)}%`,
-    `width: ${element.bounds.width.toFixed(4)}%`,
-    `height: ${element.bounds.height.toFixed(4)}%`,
-  ];
-
   const isCustomShape = shape.kind === "custom" && shape.svgPath && shape.svgViewBox;
   const isLine = shape.kind === "line";
+
+  const x = element.bounds.x.toFixed(4);
+  const y = element.bounds.y.toFixed(4);
+  const width = element.bounds.width.toFixed(4);
+  const height = element.bounds.height.toFixed(4);
+  let left = `${x}%`;
+  let top = `${y}%`;
+  let widthStyle = `${width}%`;
+  let heightStyle = `${height}%`;
+
+  if (isLine) {
+    const epsilon = 0.0001;
+    if (element.bounds.width <= epsilon) {
+      widthStyle = `${strokeWidthPx}px`;
+      left = `calc(${x}% - ${strokeWidthPx / 2}px)`;
+    }
+    if (element.bounds.height <= epsilon) {
+      heightStyle = `${strokeWidthPx}px`;
+      top = `calc(${y}% - ${strokeWidthPx / 2}px)`;
+    }
+  }
+
+  const cssProps: string[] = [
+    "position: absolute",
+    `left: ${left}`,
+    `top: ${top}`,
+    `width: ${widthStyle}`,
+    `height: ${heightStyle}`,
+  ];
 
   // Border radius
   if (shape.kind === "ellipse") {
@@ -193,14 +236,8 @@ function renderShapeElement(element: EditableElement): string {
 
   // Lines
   if (shape.kind === "line") {
-    const halfHeight = (element.bounds.height / 2).toFixed(4);
-    cssProps.push(`top: calc(${element.bounds.y.toFixed(4)}% + ${halfHeight}% - ${strokeWidthPx / 2}px)`);
-    cssProps.push(`height: ${strokeWidthPx}px`);
     cssProps.push("border: none");
-    cssProps.push(`background: ${shape.stroke || "#000"}`);
-    if (shape.lineCap === "round") {
-      cssProps.push(`border-radius: ${strokeWidthPx / 2}px`);
-    }
+    cssProps.push("background: none");
   }
 
   if (!isCustomShape && !isLine) {
@@ -215,16 +252,15 @@ function renderShapeElement(element: EditableElement): string {
     }
   }
 
-  let lineEnds = "";
-  if (shape.kind === "line" && shape.stroke) {
-    const endSize = strokeWidthPx * 2;
-    const endOffset = endSize / 2;
-    if (shape.lineHead === "oval") {
-      lineEnds += `<span style="position:absolute; left:-${endOffset}px; top:50%; width:${endSize}px; height:${endSize}px; transform:translateY(-50%); border-radius:50%; background:${shape.stroke};"></span>`;
-    }
-    if (shape.lineTail === "oval") {
-      lineEnds += `<span style="position:absolute; right:-${endOffset}px; top:50%; width:${endSize}px; height:${endSize}px; transform:translateY(-50%); border-radius:50%; background:${shape.stroke};"></span>`;
-    }
+  let lineSvg = "";
+  if (shape.kind === "line") {
+    const stroke = shape.stroke || "#000";
+    const lineCap = shape.lineCap === "round" ? "round" : shape.lineCap === "square" ? "square" : "butt";
+    lineSvg = `
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="width:100%; height:100%; display:block;">
+        <line x1="0" y1="50" x2="100" y2="50" stroke="${stroke}" stroke-width="${strokeWidthPx}" stroke-linecap="${lineCap}"></line>
+      </svg>
+    `.trim();
   }
 
   let customSvg = "";
@@ -241,7 +277,7 @@ function renderShapeElement(element: EditableElement): string {
     `.trim();
   }
 
-  return `<div data-element-id="${element.id}" style="${cssProps.join("; ")}">${customSvg}${lineEnds}</div>`;
+  return `<div data-element-id="${element.id}" style="${cssProps.join("; ")}">${customSvg}${lineSvg}</div>`;
 }
 
 /**

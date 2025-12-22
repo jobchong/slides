@@ -54,7 +54,12 @@ export interface ShapeElement {
   stroke?: string;
   strokeWidth?: number;
   borderRadius?: number;
+  lineCap?: "round" | "square" | "flat";
+  lineHead?: "oval" | "none";
+  lineTail?: "oval" | "none";
   svg?: string;               // For custom shapes
+  svgPath?: string;
+  svgViewBox?: { width: number; height: number };
 }
 
 export interface EditableElement {

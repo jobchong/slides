@@ -5,6 +5,8 @@ import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { buildGatewayUrl, buildStoredImageUrl } from "./gateway";
 import { logError, logInfo, logWarn } from "./logger";
 import { renderSlideHtml } from "./import/render";
+import { convertPptxToPdf } from "./import/convert";
+import { rasterizeSlideIfNeeded } from "./import/rasterize";
 
 // Import hybrid parsing modules
 import type {
@@ -13,10 +15,18 @@ import type {
   SlideRelationships,
   ImportOptions,
   SlideSource,
+  ExtractedElement,
+  Background,
 } from "./import/types";
 import { parseTheme, getDefaultTheme } from "./import/theme";
 import { parsePresentation, parseRelationships, parseSlide, resetElementIdCounter } from "./import/parser";
 import { convertToEditable, convertBackground } from "./import/converter";
+import type { TemplateLayout, TemplateSlide } from "./import/template-parser";
+import {
+  extractTemplatesFromDir,
+  findRelationshipTargetByType,
+  resolveRelationshipTargetPath,
+} from "./import/template-parser";
 
 const s3Bucket = process.env.S3_BUCKET;
 const s3Region = process.env.S3_REGION || "us-east-1";
@@ -223,7 +233,22 @@ export async function* importPptx(
       ? parseRelationships(presRelsXml)
       : new Map<string, string>();
 
+    const templateRegistry = await extractTemplatesFromDir(
+      workDir,
+      presentationXml,
+      slideSize,
+      theme
+    );
+    const mastersByPath = new Map(
+      templateRegistry.masters.map((master) => [master.path, master])
+    );
+    const layoutsByPath = new Map(
+      templateRegistry.layouts.map((layout) => [layout.path, layout])
+    );
+
     const total = slideOrder.length;
+    let rasterizedSlides = 0;
+    let rasterizedShapes = 0;
 
     yield { type: "progress", status: "Parsing slides...", total };
 
@@ -261,18 +286,28 @@ export async function* importPptx(
     };
 
     // Helper to resolve image rIds to URLs
-    const uploadedImages = new Map<string, string>();
+    const imageByTarget = new Map<string, string>();
 
-    const uploadImage = async (rId: string, slideRels: SlideRelationships): Promise<string | undefined> => {
-      if (uploadedImages.has(rId)) {
-        return uploadedImages.get(rId);
+    const resolveImageTarget = (
+      rId: string,
+      rels: SlideRelationships
+    ): string | undefined => {
+      const imagePath = rels.get(rId);
+      if (!imagePath) return undefined;
+      return imagePath.replace(/\\/g, "/").replace(/^(\.\.\/)+/, "");
+    };
+
+    const uploadImage = async (
+      rId: string,
+      rels: SlideRelationships
+    ): Promise<string | undefined> => {
+      const cleanedRel = resolveImageTarget(rId, rels);
+      if (!cleanedRel) return undefined;
+      if (imageByTarget.has(cleanedRel)) {
+        return imageByTarget.get(cleanedRel);
       }
 
-      const imagePath = slideRels.get(rId);
-      if (!imagePath) return undefined;
-
       const pptRoot = join(workDir, "ppt");
-      const cleanedRel = imagePath.replace(/\\/g, "/").replace(/^(\.\.\/)+/, "");
       const resolved = resolveExtractedPath(pptRoot, cleanedRel);
       if (!resolved) return undefined;
       try {
@@ -286,11 +321,92 @@ export async function* importPptx(
           imageBytes,
           guessImageContentType(ext)
         );
-        uploadedImages.set(rId, url);
+        imageByTarget.set(cleanedRel, url);
         return url;
       } catch {
         return undefined;
       }
+    };
+
+    const isPlaceholderElement = (element: ExtractedElement): boolean => {
+      return Boolean(
+        element.placeholder?.type || element.placeholder?.idx || element.placeholder?.name
+      );
+    };
+
+    const cloneElement = (element: ExtractedElement): ExtractedElement => {
+      return {
+        ...element,
+        image: element.image ? { ...element.image } : undefined,
+        shape: element.shape ? { ...element.shape } : undefined,
+        placeholder: element.placeholder ? { ...element.placeholder } : undefined,
+      };
+    };
+
+    const resolveTemplateElements = async (
+      template?: TemplateSlide | TemplateLayout
+    ): Promise<ExtractedElement[]> => {
+      if (!template) return [];
+      const resolved: ExtractedElement[] = [];
+      const sorted = [...template.elements].sort((a, b) => a.zIndex - b.zIndex);
+      for (const element of sorted) {
+        if (isPlaceholderElement(element)) continue;
+        const cloned = cloneElement(element);
+        if (cloned.type === "image" && cloned.image?.rId) {
+          const url = await uploadImage(cloned.image.rId, template.relationships);
+          if (url) {
+            cloned.image.url = url;
+          }
+        }
+        resolved.push(cloned);
+      }
+      return resolved;
+    };
+
+    const resolveTemplateBackground = async (
+      template?: TemplateSlide | TemplateLayout
+    ): Promise<Background | undefined> => {
+      if (!template) return undefined;
+      const background: Background = { ...template.background };
+      if (background.type === "image" && background.rId) {
+        const url = await uploadImage(background.rId, template.relationships);
+        if (url) {
+          background.imageUrl = url;
+        }
+      }
+      return background;
+    };
+
+    const pickBackground = (...candidates: Array<Background | undefined>): Background => {
+      for (const candidate of candidates) {
+        if (!candidate) continue;
+        if (candidate.type !== "none") return candidate;
+      }
+      return { type: "none" };
+    };
+
+    let pdfPromise: Promise<string> | null = null;
+    const getPdfPath = async (): Promise<string> => {
+      if (!pdfPromise) {
+        pdfPromise = convertPptxToPdf(pptxPath, workDir);
+      }
+      return pdfPromise;
+    };
+
+    const saveRasterImage = async (
+      filePath: string,
+      baseName: string,
+      ext: string
+    ): Promise<string> => {
+      const imageBytes = new Uint8Array(await Bun.file(filePath).arrayBuffer());
+      const filename = `${baseName}-${crypto.randomUUID()}.${ext}`;
+      return saveUploadBytes(
+        req,
+        uploadDir,
+        filename,
+        imageBytes,
+        guessImageContentType(ext)
+      );
     };
 
     const startSlideTask = async (i: number) => {
@@ -301,9 +417,7 @@ export async function* importPptx(
         return { i, progress: { type: "error", error: `Slide ${i + 1}: path not found in relationships` } as ImportProgress };
       }
 
-      const slideFilePath = slidePath.startsWith("/")
-        ? slidePath.slice(1)
-        : `ppt/${slidePath}`;
+      const slideFilePath = resolveRelationshipTargetPath("ppt/presentation.xml", slidePath);
 
       try {
         const slideXml = await readPptxFile(workDir, slideFilePath);
@@ -319,6 +433,17 @@ export async function* importPptx(
         const slideRels: SlideRelationships = slideRelsXml
           ? parseRelationships(slideRelsXml)
           : new Map();
+
+        const layoutTarget = slideRelsXml
+          ? findRelationshipTargetByType(slideRelsXml, "slideLayout")
+          : undefined;
+        const layoutPath = layoutTarget
+          ? resolveRelationshipTargetPath(slideFilePath, layoutTarget)
+          : undefined;
+        const layoutTemplate = layoutPath ? layoutsByPath.get(layoutPath) : undefined;
+        const masterTemplate = layoutTemplate?.masterPath
+          ? mastersByPath.get(layoutTemplate.masterPath)
+          : undefined;
 
         const extractedSlide = parseSlide(slideXml, i, slideSize, theme, slideRels);
 
@@ -336,16 +461,62 @@ export async function* importPptx(
           }
         }
 
+        const [masterElements, layoutElements, masterBackground, layoutBackground] = await Promise.all([
+          resolveTemplateElements(masterTemplate),
+          resolveTemplateElements(layoutTemplate),
+          resolveTemplateBackground(masterTemplate),
+          resolveTemplateBackground(layoutTemplate),
+        ]);
+
+        const maxZ = (elements: ExtractedElement[]): number => {
+          if (elements.length === 0) return -1;
+          return Math.max(...elements.map((el) => el.zIndex));
+        };
+        const masterOffset = 0;
+        const layoutOffset = masterOffset + maxZ(masterElements) + 1;
+        const slideOffset = layoutOffset + maxZ(layoutElements) + 1;
+        const mergedElements = [
+          ...masterElements.map((el) => ({ ...el, zIndex: el.zIndex + masterOffset })),
+          ...layoutElements.map((el) => ({ ...el, zIndex: el.zIndex + layoutOffset })),
+          ...extractedSlide.elements.map((el) => ({ ...el, zIndex: el.zIndex + slideOffset })),
+        ];
+
+        const mergedBackground = pickBackground(
+          extractedSlide.background,
+          layoutBackground,
+          masterBackground
+        );
+
         // Convert extracted elements to editable format
-        const elements = extractedSlide.elements
-          .map((el) => convertToEditable(el, theme, (rId) => uploadedImages.get(rId)))
+        const elements = mergedElements
+          .map((el) =>
+            convertToEditable(el, theme, (rId) => {
+              const target = resolveImageTarget(rId, slideRels);
+              return target ? imageByTarget.get(target) : undefined;
+            })
+          )
           .filter((el): el is NonNullable<typeof el> => el !== null);
 
-        const source: SlideSource = {
-          background: convertBackground(extractedSlide.background),
+        let source: SlideSource = {
+          background: convertBackground(mergedBackground),
           elements,
           import: { slideIndex: i },
         };
+        const rasterResult = await rasterizeSlideIfNeeded({
+          source,
+          slideIndex: i,
+          pptxPath,
+          workDir,
+          saveImage: saveRasterImage,
+          getPdfPath,
+        });
+        source = rasterResult.source;
+        if (rasterResult.rasterized) {
+          rasterizedSlides++;
+          if (rasterResult.mode === "shapes") {
+            rasterizedShapes++;
+          }
+        }
         const html = renderSlideHtml(source);
 
         return {
@@ -431,6 +602,10 @@ export async function* importPptx(
 
     logInfo("Import completed", {
       total,
+      masters: templateRegistry.masters.length,
+      layouts: templateRegistry.layouts.length,
+      rasterized: rasterizedSlides,
+      rasterizedShapes,
     });
   } finally {
     // Cleanup temp files

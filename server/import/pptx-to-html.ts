@@ -3,12 +3,20 @@ import { mkdir, readFile, writeFile, copyFile, readdir, unlink, rmdir } from "no
 import { join, normalize, basename, extname } from "node:path";
 import { randomUUID } from "node:crypto";
 
+import type { Background, ExtractedElement, SlideRelationships } from "./types";
 import { parsePresentation, parseRelationships, parseSlide, resetElementIdCounter } from "./parser";
 import { parseTheme, getDefaultTheme } from "./theme";
 import { convertBackground, convertToEditable } from "./converter";
-import { convertPdfPageToPng, convertPptxToPdf } from "./convert";
+import { convertPptxToPdf } from "./convert";
 import { renderSlideHtml } from "./render";
+import type { TemplateLayout, TemplateSlide } from "./template-parser";
+import {
+  extractTemplatesFromDir,
+  findRelationshipTargetByType,
+  resolveRelationshipTargetPath,
+} from "./template-parser";
 import { EMU_PER_INCH } from "./types";
+import { rasterizeSlideIfNeeded } from "./rasterize";
 
 async function runCommand(command: string, args: string[], errorPrefix: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
@@ -28,64 +36,6 @@ async function runCommand(command: string, args: string[], errorPrefix: string):
       reject(new Error(`${errorPrefix}: ${err.message}`));
     });
   });
-}
-
-async function getImageSize(imagePath: string): Promise<{ width: number; height: number }> {
-  const proc = spawn("sips", ["-g", "pixelWidth", "-g", "pixelHeight", "-1", imagePath]);
-  let stdout = "";
-  let stderr = "";
-  proc.stdout.on("data", (data) => {
-    stdout += data.toString();
-  });
-  proc.stderr.on("data", (data) => {
-    stderr += data.toString();
-  });
-
-  await new Promise<void>((resolve, reject) => {
-    proc.on("close", (code) => {
-      if (code !== 0) {
-        reject(new Error(`sips failed: ${stderr}`));
-        return;
-      }
-      resolve();
-    });
-    proc.on("error", (err) => {
-      reject(new Error(`sips failed: ${err.message}`));
-    });
-  });
-
-  const widthMatch = stdout.match(/pixelWidth:\s+(\d+)/);
-  const heightMatch = stdout.match(/pixelHeight:\s+(\d+)/);
-  if (!widthMatch || !heightMatch) {
-    throw new Error(`Failed to read image size for ${imagePath}`);
-  }
-
-  return { width: parseInt(widthMatch[1], 10), height: parseInt(heightMatch[1], 10) };
-}
-
-async function cropImage(
-  srcPath: string,
-  destPath: string,
-  x: number,
-  y: number,
-  width: number,
-  height: number
-): Promise<void> {
-  await runCommand(
-    "sips",
-    [
-      "-c",
-      String(height),
-      String(width),
-      "--cropOffset",
-      String(y),
-      String(x),
-      "-o",
-      destPath,
-      srcPath,
-    ],
-    "sips crop failed"
-  );
 }
 
 async function unzipPptx(pptxPath: string, outputDir: string): Promise<void> {
@@ -228,22 +178,40 @@ async function main(): Promise<void> {
     const presRelsXml = await readPptxFile(workDir, "ppt/_rels/presentation.xml.rels");
     const presRels = presRelsXml ? parseRelationships(presRelsXml) : new Map<string, string>();
 
+    const templateRegistry = await extractTemplatesFromDir(
+      workDir,
+      presentationXml,
+      slideSize,
+      theme
+    );
+    const mastersByPath = new Map(
+      templateRegistry.masters.map((master) => [master.path, master])
+    );
+    const layoutsByPath = new Map(
+      templateRegistry.layouts.map((layout) => [layout.path, layout])
+    );
+
     const imageByTarget = new Map<string, string>();
-    const resolveImageForSlide = async (
+    const resolveImageTarget = (rId: string, rels: SlideRelationships): string | undefined => {
+      const target = rels.get(rId);
+      if (!target) return undefined;
+      return target.replace(/\\/g, "/").replace(/^(\.\.\/)+/, "");
+    };
+
+    const resolveImageForRels = async (
       rId: string,
-      slideRels: Map<string, string>
+      rels: SlideRelationships
     ): Promise<string | undefined> => {
-      const target = slideRels.get(rId);
+      const target = resolveImageTarget(rId, rels);
       if (!target) return undefined;
       if (imageByTarget.has(target)) return imageByTarget.get(target);
 
       const pptRoot = join(workDir, "ppt");
-      const cleanedRel = target.replace(/\\/g, "/").replace(/^(\.\.\/)+/, "");
-      const resolved = resolveExtractedPath(pptRoot, cleanedRel);
+      const resolved = resolveExtractedPath(pptRoot, target);
       if (!resolved) return undefined;
 
-      const extension = extname(cleanedRel) || ".png";
-      const fileBase = basename(cleanedRel, extension);
+      const extension = extname(target) || ".png";
+      const fileBase = basename(target, extension);
       const filename = `${fileBase}-${randomUUID()}${extension}`;
       const dest = join(assetsDir, filename);
       await copyFile(resolved, dest);
@@ -252,7 +220,88 @@ async function main(): Promise<void> {
       return url;
     };
 
+    const isPlaceholderElement = (element: ExtractedElement): boolean => {
+      return Boolean(
+        element.placeholder?.type || element.placeholder?.idx || element.placeholder?.name
+      );
+    };
+
+    const cloneElement = (element: ExtractedElement): ExtractedElement => {
+      return {
+        ...element,
+        image: element.image ? { ...element.image } : undefined,
+        shape: element.shape ? { ...element.shape } : undefined,
+        placeholder: element.placeholder ? { ...element.placeholder } : undefined,
+      };
+    };
+
+    const resolveTemplateElements = async (
+      template?: TemplateSlide | TemplateLayout
+    ): Promise<ExtractedElement[]> => {
+      if (!template) return [];
+      const resolved: ExtractedElement[] = [];
+      const sorted = [...template.elements].sort((a, b) => a.zIndex - b.zIndex);
+      for (const element of sorted) {
+        if (isPlaceholderElement(element)) continue;
+        const cloned = cloneElement(element);
+        if (cloned.type === "image" && cloned.image?.rId) {
+          const url = await resolveImageForRels(cloned.image.rId, template.relationships);
+          if (url) {
+            cloned.image.url = url;
+          }
+        }
+        resolved.push(cloned);
+      }
+      return resolved;
+    };
+
+    const resolveTemplateBackground = async (
+      template?: TemplateSlide | TemplateLayout
+    ): Promise<Background | undefined> => {
+      if (!template) return undefined;
+      const background: Background = { ...template.background };
+      if (background.type === "image" && background.rId) {
+        const url = await resolveImageForRels(background.rId, template.relationships);
+        if (url) {
+          background.imageUrl = url;
+        }
+      }
+      return background;
+    };
+
+    const pickBackground = (...candidates: Array<Background | undefined>): Background => {
+      for (const candidate of candidates) {
+        if (!candidate) continue;
+        if (candidate.type !== "none") return candidate;
+      }
+      return { type: "none" };
+    };
+
     const slideHtml: string[] = [];
+    const templateHtml: string[] = [];
+    let rasterizedSlides = 0;
+    let rasterizedShapes = 0;
+    let pdfPromise: Promise<string> | null = null;
+    const getPdfPath = async (): Promise<string> => {
+      if (!pdfPromise) {
+        const pdfOverride = join(tmpRoot, `${pptxBase}.pdf`);
+        pdfPromise = (await Bun.file(pdfOverride).exists())
+          ? pdfOverride
+          : convertPptxToPdf(pptxPath, workDir);
+      }
+      return pdfPromise;
+    };
+
+    const saveImage = async (
+      filePath: string,
+      baseName: string,
+      ext: string
+    ): Promise<string> => {
+      const filename = `${baseName}-${randomUUID()}.${ext}`;
+      const dest = join(assetsDir, filename);
+      await copyFile(filePath, dest);
+      return `assets/${filename}`;
+    };
     for (let i = 0; i < slideOrder.length; i++) {
       const slideRId = slideOrder[i];
       const slidePath = presRels.get(slideRId);
@@ -260,9 +309,7 @@ async function main(): Promise<void> {
         throw new Error(`Slide ${i + 1}: path not found in relationships`);
       }
 
-      const slideFilePath = slidePath.startsWith("/")
-        ? slidePath.slice(1)
-        : `ppt/${slidePath}`;
+      const slideFilePath = resolveRelationshipTargetPath("ppt/presentation.xml", slidePath);
 
       const slideXml = await readPptxFile(workDir, slideFilePath);
       if (!slideXml) {
@@ -276,94 +323,140 @@ async function main(): Promise<void> {
       const slideRelsXml = await readPptxFile(workDir, slideRelsPath);
       const slideRels = slideRelsXml ? parseRelationships(slideRelsXml) : new Map<string, string>();
 
+      const layoutTarget = slideRelsXml
+        ? findRelationshipTargetByType(slideRelsXml, "slideLayout")
+        : undefined;
+      const layoutPath = layoutTarget
+        ? resolveRelationshipTargetPath(slideFilePath, layoutTarget)
+        : undefined;
+      const layoutTemplate = layoutPath ? layoutsByPath.get(layoutPath) : undefined;
+      const masterTemplate = layoutTemplate?.masterPath
+        ? mastersByPath.get(layoutTemplate.masterPath)
+        : undefined;
+
       const extractedSlide = parseSlide(slideXml, i, slideSize, theme, slideRels);
 
-      const resolvedByRid = new Map<string, string>();
       for (const element of extractedSlide.elements) {
         if (element.type === "image" && element.image?.rId) {
-          const url = await resolveImageForSlide(element.image.rId, slideRels);
-          if (url) resolvedByRid.set(element.image.rId, url);
+          const url = await resolveImageForRels(element.image.rId, slideRels);
+          if (url) {
+            element.image.url = url;
+          }
         }
       }
 
-      const elements = extractedSlide.elements
-        .map((el) => convertToEditable(el, theme, (rId) => resolvedByRid.get(rId)))
+      if (extractedSlide.background.type === "image" && extractedSlide.background.rId) {
+        const backgroundUrl = await resolveImageForRels(extractedSlide.background.rId, slideRels);
+        if (backgroundUrl) {
+          extractedSlide.background.imageUrl = backgroundUrl;
+        }
+      }
+
+      const [masterElements, layoutElements, masterBackground, layoutBackground] = await Promise.all([
+        resolveTemplateElements(masterTemplate),
+        resolveTemplateElements(layoutTemplate),
+        resolveTemplateBackground(masterTemplate),
+        resolveTemplateBackground(layoutTemplate),
+      ]);
+
+      const maxZ = (elements: ExtractedElement[]): number => {
+        if (elements.length === 0) return -1;
+        return Math.max(...elements.map((el) => el.zIndex));
+      };
+      const masterOffset = 0;
+      const layoutOffset = masterOffset + maxZ(masterElements) + 1;
+      const slideOffset = layoutOffset + maxZ(layoutElements) + 1;
+      const mergedElements = [
+        ...masterElements.map((el) => ({ ...el, zIndex: el.zIndex + masterOffset })),
+        ...layoutElements.map((el) => ({ ...el, zIndex: el.zIndex + layoutOffset })),
+        ...extractedSlide.elements.map((el) => ({ ...el, zIndex: el.zIndex + slideOffset })),
+      ];
+
+      const mergedBackground = pickBackground(
+        extractedSlide.background,
+        layoutBackground,
+        masterBackground
+      );
+
+      const elements = mergedElements
+        .map((el) =>
+          convertToEditable(el, theme, (rId) => {
+            const target = resolveImageTarget(rId, slideRels);
+            return target ? imageByTarget.get(target) : undefined;
+          })
+        )
         .filter((el): el is NonNullable<typeof el> => el !== null);
       let source = {
-        background: convertBackground(extractedSlide.background),
+        background: convertBackground(mergedBackground),
         elements,
         import: { slideIndex: i },
       };
-
-      const customShapes = source.elements.filter(
-        (el) => el.type === "shape" && el.shape?.kind === "custom" && el.shape.svgPath && el.shape.svgViewBox
-      );
-      const nonTextElements = source.elements.filter((el) => el.type !== "text");
-
-      const shouldRasterizeNonText = nonTextElements.length > 8;
-      if (customShapes.length > 0 || shouldRasterizeNonText) {
-        const pdfOverride = join(tmpRoot, `${pptxBase}.pdf`);
-        const pdfPath = (await Bun.file(pdfOverride).exists())
-          ? pdfOverride
-          : await convertPptxToPdf(pptxPath, workDir);
-        const slidePng = await convertPdfPageToPng(
-          pdfPath,
-          i,
-          workDir,
-          `slide-${i + 1}`,
-          200
-        );
-
-        if (shouldRasterizeNonText) {
-          const slideFilename = `slide-${i + 1}-${randomUUID()}.png`;
-          const slideDest = join(assetsDir, slideFilename);
-          await copyFile(slidePng, slideDest);
-          source = {
-            ...source,
-            background: { type: "rasterized", url: `assets/${slideFilename}` },
-            // Slide-accurate: the raster already includes visible text.
-            elements: [],
-          };
-        } else if (customShapes.length > 0) {
-          const { width: imgWidth, height: imgHeight } = await getImageSize(slidePng);
-          const elementImages = new Map<string, string>();
-          for (const shapeElement of customShapes) {
-            const bounds = shapeElement.bounds;
-            const cropX = Math.max(0, Math.round((bounds.x / 100) * imgWidth));
-            const cropY = Math.max(0, Math.round((bounds.y / 100) * imgHeight));
-            const cropW = Math.max(1, Math.round((bounds.width / 100) * imgWidth));
-            const cropH = Math.max(1, Math.round((bounds.height / 100) * imgHeight));
-
-            const filename = `shape-${i + 1}-${randomUUID()}.png`;
-            const dest = join(assetsDir, filename);
-            await cropImage(slidePng, dest, cropX, cropY, cropW, cropH);
-            elementImages.set(shapeElement.id, `assets/${filename}`);
-          }
-
-          source = {
-            ...source,
-            elements: source.elements.map((el) => {
-              if (el.type === "shape" && elementImages.has(el.id)) {
-                return {
-                  id: el.id,
-                  type: "image",
-                  bounds: el.bounds,
-                  zIndex: el.zIndex,
-                  rotation: el.rotation,
-                  image: {
-                    url: elementImages.get(el.id)!,
-                    objectFit: "fill",
-                  },
-                };
-              }
-              return el;
-            }),
-          };
+      const rasterResult = await rasterizeSlideIfNeeded({
+        source,
+        slideIndex: i,
+        pptxPath,
+        workDir,
+        saveImage,
+        getPdfPath,
+      });
+      source = rasterResult.source;
+      if (rasterResult.rasterized) {
+        rasterizedSlides++;
+        if (rasterResult.mode === "shapes") {
+          rasterizedShapes++;
         }
       }
 
       slideHtml.push(
         `<section class="slide" data-slide-index="${i + 1}">\n${renderSlideHtml(source)}\n</section>`
+      );
+    }
+
+    const renderTemplateSection = (label: string, source: { background: Background; elements: ExtractedElement[] }) => {
+      const elements = source.elements
+        .map((el) => convertToEditable(el, theme))
+        .filter((el): el is NonNullable<typeof el> => el !== null);
+
+      return `<section class="slide" data-template="${label}">\n${renderSlideHtml({
+        background: convertBackground(source.background),
+        elements,
+        import: { slideIndex: -1 },
+      })}\n</section>`;
+    };
+
+    for (const master of templateRegistry.masters) {
+      const [masterElements, masterBackground] = await Promise.all([
+        resolveTemplateElements(master),
+        resolveTemplateBackground(master),
+      ]);
+      templateHtml.push(
+        renderTemplateSection(`master:${master.name ?? master.path}`, {
+          background: pickBackground(masterBackground),
+          elements: masterElements,
+        })
+      );
+    }
+
+    for (const layout of templateRegistry.layouts) {
+      const master = layout.masterPath ? mastersByPath.get(layout.masterPath) : undefined;
+      const [layoutElements, masterElements, layoutBackground, masterBackground] = await Promise.all([
+        resolveTemplateElements(layout),
+        resolveTemplateElements(master),
+        resolveTemplateBackground(layout),
+        resolveTemplateBackground(master),
+      ]);
+
+      const mergedElements = [...masterElements, ...layoutElements].map((element, index) => ({
+        ...element,
+        zIndex: index,
+      }));
+      const mergedBackground = pickBackground(layoutBackground, masterBackground);
+
+      templateHtml.push(
+        renderTemplateSection(`layout:${layout.name ?? layout.path}`, {
+          background: mergedBackground,
+          elements: mergedElements,
+        })
       );
     }
 
@@ -409,12 +502,23 @@ body {
   </head>
   <body>
     ${slideHtml.join("\n")}
+    ${templateHtml.join("\n")}
   </body>
 </html>
 `.trimStart();
 
     await writeFile(join(outputDir, "styles.css"), css, "utf-8");
     await writeFile(join(outputDir, "index.html"), html, "utf-8");
+    console.log(
+      [
+        "Import summary:",
+        `slides=${slideOrder.length}`,
+        `masters=${templateRegistry.masters.length}`,
+        `layouts=${templateRegistry.layouts.length}`,
+        `rasterized=${rasterizedSlides}`,
+        `rasterizedShapes=${rasterizedShapes}`,
+      ].join(" ")
+    );
   } finally {
     await cleanupDir(workDir);
   }

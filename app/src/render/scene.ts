@@ -119,7 +119,7 @@ function renderBackground(background: SlideBackground): string {
 }
 
 function renderTextElement(element: EditableElement, text: TextElement): string {
-  const style = styleToString({
+  const baseStyles = {
     position: "absolute",
     top: formatPercent(element.bounds.y),
     left: formatPercent(element.bounds.x),
@@ -143,10 +143,48 @@ function renderTextElement(element: EditableElement, text: TextElement): string 
     "font-weight": text.style.fontWeight === "bold" ? "700" : "400",
     "font-style": text.style.fontStyle,
     color: text.style.color,
+  };
+  const shape = element.shape;
+  const hasCustomShape = shape?.kind === "custom" && shape.svgPath && shape.svgViewBox;
+  let customSvg = "";
+  if (hasCustomShape && shape) {
+    const viewBox = shape.svgViewBox!;
+    const fill = shape.fill && shape.fill !== "none" ? shape.fill : "none";
+    const stroke = shape.stroke || "none";
+    const strokeWidth = stroke !== "none" ? shape.strokeWidth || 1 : 0;
+    customSvg = `
+      <svg viewBox="0 0 ${viewBox.width} ${viewBox.height}" preserveAspectRatio="none" style="position:absolute; inset:0; width:100%; height:100%; display:block; z-index:0;">
+        <path d="${shape.svgPath}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>
+      </svg>
+    `.trim();
+  }
+
+  const content = escapeHtml(text.content);
+  const wrappedContent = hasCustomShape
+    ? `<span style="position: relative; z-index: 1;">${content}</span>`
+    : content;
+
+  const shapeStyles: Record<string, string | undefined> = {};
+  if (shape && !hasCustomShape) {
+    if (shape.fill && shape.fill !== "none") {
+      shapeStyles["background-color"] = shape.fill;
+    }
+    if (shape.stroke && shape.strokeWidth) {
+      shapeStyles.border = `${formatNumber(shape.strokeWidth)}px solid ${shape.stroke}`;
+    }
+    if (shape.kind === "ellipse") {
+      shapeStyles["border-radius"] = "50%";
+    } else if (shape.kind === "roundRect" && shape.borderRadius) {
+      shapeStyles["border-radius"] = formatPx(shape.borderRadius);
+    }
+  }
+
+  const mergedStyle = styleToString({
+    ...baseStyles,
+    ...shapeStyles,
   });
-  return `<div data-el-id="${escapeHtml(element.id)}" data-el-type="text" style="${style}">${escapeHtml(
-    text.content
-  )}</div>`;
+
+  return `<div data-el-id="${escapeHtml(element.id)}" data-el-type="text" style="${mergedStyle}">${customSvg}${wrappedContent}</div>`;
 }
 
 function renderShapeElement(element: EditableElement, shape: ShapeElement): string {
@@ -162,22 +200,52 @@ function renderShapeElement(element: EditableElement, shape: ShapeElement): stri
     "background-color": shape.fill === "none" ? "transparent" : shape.fill,
   };
 
-  if (shape.stroke && shape.strokeWidth) {
-    styles.border = `${formatNumber(shape.strokeWidth)}px solid ${shape.stroke}`;
+  const isCustomShape = shape.kind === "custom" && shape.svgPath && shape.svgViewBox;
+  const isLine = shape.kind === "line";
+
+  if (!isCustomShape && !isLine) {
+    if (shape.stroke && shape.strokeWidth) {
+      styles.border = `${formatNumber(shape.strokeWidth)}px solid ${shape.stroke}`;
+    }
+    if (shape.kind === "ellipse") {
+      styles["border-radius"] = "50%";
+    } else if (shape.kind === "roundRect" && shape.borderRadius) {
+      styles["border-radius"] = formatPx(shape.borderRadius);
+    }
+  } else {
+    styles["background-color"] = "transparent";
+    styles.border = "none";
   }
 
-  if (shape.kind === "ellipse") {
-    styles["border-radius"] = "50%";
-  } else if (shape.kind === "roundRect" && shape.borderRadius) {
-    styles["border-radius"] = formatPx(shape.borderRadius);
-  } else if (shape.kind === "line") {
-    styles["background-color"] = shape.stroke || shape.fill || "#000000";
+  let customSvg = "";
+  if (isCustomShape) {
+    const viewBox = shape.svgViewBox!;
+    const fill = shape.fill && shape.fill !== "none" ? shape.fill : "none";
+    const stroke = shape.stroke || "none";
+    const strokeWidth = stroke !== "none" ? shape.strokeWidth || 1 : 0;
+    customSvg = `
+      <svg viewBox="0 0 ${viewBox.width} ${viewBox.height}" preserveAspectRatio="none" style="width:100%; height:100%; display:block;">
+        <path d="${shape.svgPath}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>
+      </svg>
+    `.trim();
+  }
+
+  let lineSvg = "";
+  if (isLine) {
+    const stroke = shape.stroke || shape.fill || "#000000";
+    const lineCap = shape.lineCap === "round" ? "round" : shape.lineCap === "square" ? "square" : "butt";
+    const strokeWidth = shape.strokeWidth || 1;
+    lineSvg = `
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="width:100%; height:100%; display:block;">
+        <line x1="0" y1="50" x2="100" y2="50" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="${lineCap}"></line>
+      </svg>
+    `.trim();
   }
 
   const style = styleToString(styles);
   return `<div data-el-id="${escapeHtml(element.id)}" data-el-type="shape" data-shape-kind="${escapeHtml(
     shape.kind
-  )}" style="${style}"></div>`;
+  )}" style="${style}">${customSvg}${lineSvg}</div>`;
 }
 
 function renderImageElement(element: EditableElement, image: ImageElement): string {

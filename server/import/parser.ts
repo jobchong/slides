@@ -16,6 +16,7 @@ import type {
   Background,
   Theme,
   SlideRelationships,
+  PlaceholderInfo,
 } from "./types";
 import { EMU_PER_POINT } from "./types";
 import { resolveColor } from "./theme";
@@ -74,12 +75,17 @@ export function parseRelationships(xml: string): SlideRelationships {
 /**
  * Parse a single slide XML into ExtractedSlide
  */
+export type ParseSlideOptions = {
+  includeEmptyPlaceholders?: boolean;
+};
+
 export function parseSlide(
   xml: string,
   index: number,
   slideSize: SlideSize,
   theme: Theme,
-  relationships: SlideRelationships
+  relationships: SlideRelationships,
+  options: ParseSlideOptions = {}
 ): ExtractedSlide {
   const elements: ExtractedElement[] = [];
   let zIndex = 0;
@@ -95,7 +101,17 @@ export function parseSlide(
   if (spTreeMatch) {
     const spTreeContent = spTreeMatch[1];
     logInfo("Found spTree", { index, contentLength: spTreeContent.length });
-    parseShapeTree(spTreeContent, elements, zIndex, slideSize, theme, relationships, undefined, index);
+    parseShapeTree(
+      spTreeContent,
+      elements,
+      zIndex,
+      slideSize,
+      theme,
+      relationships,
+      undefined,
+      index,
+      options
+    );
   } else {
     logWarn("No spTree found in slide", { index });
   }
@@ -130,7 +146,8 @@ function parseShapeTree(
   theme: Theme,
   relationships: SlideRelationships,
   parentTransform?: { offX: number; offY: number; scaleX: number; scaleY: number },
-  slideIndex?: number
+  slideIndex?: number,
+  options: ParseSlideOptions = {}
 ): number {
   let zIndex = startZIndex;
 
@@ -152,7 +169,8 @@ function parseShapeTree(
         theme,
         relationships,
         parentTransform,
-        slideIndex
+        slideIndex,
+        options
       );
       continue;
     }
@@ -166,7 +184,8 @@ function parseShapeTree(
         theme,
         relationships,
         parentTransform,
-        slideIndex
+        slideIndex,
+        options
       );
       if (element) {
         elements.push(element);
@@ -194,7 +213,8 @@ function parseShapeTree(
         slideSize,
         relationships,
         parentTransform,
-        slideIndex
+        slideIndex,
+        options
       );
       if (element) {
         elements.push(element);
@@ -301,7 +321,8 @@ function parseGroup(
   theme: Theme,
   relationships: SlideRelationships,
   parentTransform?: { offX: number; offY: number; scaleX: number; scaleY: number },
-  slideIndex?: number
+  slideIndex?: number,
+  options: ParseSlideOptions = {}
 ): number {
   // Parse group transform
   // <p:grpSpPr>
@@ -360,12 +381,43 @@ function parseGroup(
 
   // Parse children with transform applied
   logInfo("Parsing group children", { slideIndex, transform });
-  return parseShapeTree(xml, elements, startZIndex, slideSize, theme, relationships, transform, slideIndex);
+  return parseShapeTree(
+    xml,
+    elements,
+    startZIndex,
+    slideSize,
+    theme,
+    relationships,
+    transform,
+    slideIndex,
+    options
+  );
 }
 
 /**
  * Parse a shape element (p:sp)
  */
+function parsePlaceholder(xml: string): PlaceholderInfo | undefined {
+  const phMatch = xml.match(/<p:ph([^>]*)\/?>/);
+  if (!phMatch) return undefined;
+
+  const attrs = phMatch[1];
+  const typeMatch = attrs.match(/type="([^"]+)"/);
+  const idxMatch = attrs.match(/idx="([^"]+)"/);
+  const nameMatch = xml.match(/<p:cNvPr[^>]*name="([^"]+)"/);
+
+  const placeholder: PlaceholderInfo = {};
+  if (typeMatch) placeholder.type = typeMatch[1];
+  if (idxMatch) placeholder.idx = idxMatch[1];
+  if (nameMatch) placeholder.name = nameMatch[1];
+
+  if (!placeholder.type && !placeholder.idx && !placeholder.name) {
+    return undefined;
+  }
+
+  return placeholder;
+}
+
 function parseShape(
   xml: string,
   zIndex: number,
@@ -373,7 +425,8 @@ function parseShape(
   theme: Theme,
   relationships: SlideRelationships,
   parentTransform?: { offX: number; offY: number; scaleX: number; scaleY: number },
-  slideIndex?: number
+  slideIndex?: number,
+  options: ParseSlideOptions = {}
 ): ExtractedElement | null {
   // Parse shape properties
   const spPrMatch = xml.match(/<p:spPr>([\s\S]*?)<\/p:spPr>/);
@@ -392,6 +445,7 @@ function parseShape(
   }
 
   logInfo("Shape bounds parsed", { slideIndex, bounds, rotation });
+  const placeholder = parsePlaceholder(xml);
 
   // Check if this is an image (has blipFill)
   const blipFillMatch = spPrXml.match(/<a:blipFill[^>]*>([\s\S]*?)<\/a:blipFill>/);
@@ -405,6 +459,7 @@ function parseShape(
         bounds,
         zIndex,
         rotation,
+        placeholder,
         image: { rId },
       };
     }
@@ -443,7 +498,8 @@ function parseShape(
   // Skip empty shapes with no fill/stroke (empty placeholders)
   const hasFill = fill && fill !== "none";
   const hasStroke = stroke && stroke !== "none";
-  if (type === "shape" && !hasFill && !hasStroke) {
+  const isPlaceholder = !!(placeholder?.type || placeholder?.idx || placeholder?.name);
+  if (type === "shape" && !hasFill && !hasStroke && !(options.includeEmptyPlaceholders && isPlaceholder)) {
     logInfo("Skipping empty placeholder shape", { slideIndex, shapeType, fill, stroke });
     return null;
   }
@@ -454,6 +510,7 @@ function parseShape(
     bounds,
     zIndex,
     rotation,
+    placeholder,
   };
 
   // Always include text data if present
@@ -544,7 +601,8 @@ function parsePicture(
   slideSize: SlideSize,
   relationships: SlideRelationships,
   parentTransform?: { offX: number; offY: number; scaleX: number; scaleY: number },
-  slideIndex?: number
+  slideIndex?: number,
+  options: ParseSlideOptions = {}
 ): ExtractedElement | null {
   // Parse shape properties
   const spPrMatch = xml.match(/<p:spPr>([\s\S]*?)<\/p:spPr>/);
@@ -563,12 +621,15 @@ function parsePicture(
     return null;
   }
 
+  const placeholder = parsePlaceholder(xml);
+
   return {
     id: generateElementId("image", slideIndex ?? 0),
     type: "image",
     bounds,
     zIndex,
     rotation,
+    placeholder,
     image: { rId: blipMatch[1] },
   };
 }

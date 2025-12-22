@@ -118,6 +118,13 @@ export interface ExtractedElement {
   image?: ImageData;
   shape?: ShapeData;
   table?: TableData;
+  placeholder?: PlaceholderInfo;
+}
+
+export interface PlaceholderInfo {
+  type?: string;
+  idx?: string;
+  name?: string;
 }
 
 // Editable element for frontend (converted from ExtractedElement)

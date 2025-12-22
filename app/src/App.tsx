@@ -8,7 +8,6 @@ import { ImportProgress } from "./components/ImportProgress";
 import { useSlideNavigation } from "./hooks/useSlideNavigation";
 import { callModelStream, importPptx, type ImportProgress as ImportProgressType } from "./api";
 import { MODEL_OPTIONS } from "./models";
-import { sceneToHtml } from "./render/scene";
 import { sanitizeHtml } from "./sanitize";
 import "./App.css";
 
@@ -16,12 +15,8 @@ function createEmptySource(): SlideSource {
   return { background: { type: "none" }, elements: [] };
 }
 
-function buildSlideFromSource(source: SlideSource): Slide {
-  return { id: crypto.randomUUID(), html: sceneToHtml(source), source };
-}
-
 function createSlide(): Slide {
-  return buildSlideFromSource(createEmptySource());
+  return { id: crypto.randomUUID(), html: "", source: createEmptySource() };
 }
 
 export default function App() {
@@ -194,12 +189,7 @@ export default function App() {
         },
         (slide) => {
           if (importAbortRef.current) return;
-          const hasRenderableSource =
-            !!slide.source &&
-            (slide.source.elements.length > 0 || slide.source.background.type !== "none");
-          const normalizedSlide = hasRenderableSource
-            ? { ...slide, html: sceneToHtml(slide.source!) }
-            : slide;
+          const normalizedSlide = { ...slide, html: sanitizeHtml(slide.html) };
           importedSlides.push(normalizedSlide);
           // Update slides as they come in so user sees progress
           setSlides((prev) => {

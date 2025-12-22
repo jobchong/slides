@@ -75,6 +75,11 @@ Requirements:
 Notes:
 - PPTX import concurrency is fixed at `8` on the server.
 - `S3_PUBLIC_BASE_URL` enables direct S3/CDN URLs in generated HTML.
+- Template extraction: masters/layouts are parsed and merged so template visuals appear in the import output.
+- Manual test helper `server/import/pptx-to-html.ts` now renders master/layout previews after slides for visual validation.
+
+## Frontend Rendering
+- UI currently renders server-provided HTML while still retaining structured `SlideSource` data for future editing.
 
 ## Multi-Slide Management
 - Slides are `{ id, html, thumbnail? }` stored in an array.
