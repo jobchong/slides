@@ -7,7 +7,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { transcribeAudio } from "./groq";
-import { generateSlide, generateSlideStream, getDefaultModel } from "./llm";
+import { generateSlide, generateSlideStream, getDefaultModel, selectModel } from "./llm";
 import { importPptx } from "./import";
 import { buildGatewayUrl, buildS3PublicUploadUrl, buildStoredImageUrl } from "./gateway";
 import type { ImportOptions } from "./import/types";
@@ -262,11 +262,8 @@ async function handleGenerateStream(req: Request): Promise<Response> {
       return jsonResponse({ error: "messages must be an array" }, 400);
     }
 
-    const selectedModel =
-      model ||
-      process.env.DEFAULT_MODEL ||
-      process.env.VITE_DEFAULT_MODEL ||
-      getDefaultModel();
+    const lastMessage = messages[messages.length - 1]?.content || "";
+    const selectedModel = selectModel(lastMessage, model);
 
     logInfo("Generate stream request received", {
       model: selectedModel,
@@ -339,11 +336,7 @@ async function handleVoiceMessage(req: Request): Promise<Response> {
     const audioFile = form.get("audio");
     const messagesJson = form.get("messages");
     const currentHtml = (form.get("currentHtml") as string) || "";
-    const selectedModel =
-      (form.get("model") as string | null) ||
-      process.env.DEFAULT_MODEL ||
-      process.env.VITE_DEFAULT_MODEL ||
-      getDefaultModel();
+    const userModel = form.get("model") as string | null;
 
     if (!(audioFile instanceof File)) {
       logWarn("Voice message rejected: missing audio file.", {
@@ -356,7 +349,6 @@ async function handleVoiceMessage(req: Request): Promise<Response> {
       type: audioFile.type,
       size: audioFile.size,
       name: audioFile.name,
-      model: selectedModel,
     });
 
     if (!allowedAudioTypes.has(audioFile.type)) {
@@ -407,6 +399,9 @@ async function handleVoiceMessage(req: Request): Promise<Response> {
       return jsonResponse({ error: "Failed to transcribe audio." }, 500);
     }
 
+    // Select model based on transcription content
+    const selectedModel = selectModel(transcription, userModel || undefined);
+
     // Add transcription as a user message
     const updatedMessages = [
       ...messages,
@@ -419,6 +414,7 @@ async function handleVoiceMessage(req: Request): Promise<Response> {
     const durationMs = Date.now() - generationStart;
 
     logInfo("Voice message response produced", {
+      model: selectedModel,
       transcription: preview(transcription),
       htmlLength: slideHtml?.length ?? 0,
       htmlPreview: preview(slideHtml),

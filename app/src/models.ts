@@ -1,4 +1,4 @@
-export type Provider = "anthropic" | "openai" | "google";
+export type Provider = "anthropic" | "openai" | "google" | "auto";
 
 export interface ModelOption {
   value: string;
@@ -7,6 +7,11 @@ export interface ModelOption {
 }
 
 export const MODEL_OPTIONS: ModelOption[] = [
+  {
+    value: "auto",
+    label: "Auto (smart routing)",
+    provider: "auto",
+  },
   {
     value: "claude-haiku-4-5-20251001",
     label: "Claude Haiku 4.5",

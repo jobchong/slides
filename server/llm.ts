@@ -13,9 +13,58 @@ type Provider = "anthropic" | "openai" | "google";
 const DEFAULT_MODEL =
   process.env.DEFAULT_MODEL ||
   process.env.VITE_DEFAULT_MODEL ||
-  "claude-haiku-4-5-20251015";
+  "claude-haiku-4-5-20251001";
+
+const COMPLEX_MODEL = "claude-sonnet-4-5-20250929";
+const SIMPLE_MODEL = "claude-haiku-4-5-20251001";
+const COMPLEXITY_THRESHOLD = 4;
 
 const MAX_GENERATION_TOKENS = 4096;
+
+/**
+ * Scores the complexity of a slide generation request.
+ * Higher scores indicate more complex requests that benefit from a stronger model.
+ */
+function scoreComplexity(message: string): number {
+  let score = 0;
+
+  // Multiple elements (weighted heavily)
+  if (/\d+\s*(box|rect|circle|item|step|node|shape)/i.test(message)) score += 3;
+  if (/\b(several|multiple|many|few)\b/i.test(message)) score += 2;
+
+  // Spatial relationships
+  if (/\b(next to|beside|below|above|between|left of|right of|connect|chain|link|arrange)\b/i.test(message)) score += 2;
+
+  // Diagram types
+  if (/\b(diagram|flowchart|chart|timeline|hierarchy|org\s*chart|process|workflow|pipeline)\b/i.test(message)) score += 3;
+
+  // Arrows/connectors
+  if (/\b(arrow|connector|line|point(s|ing)?\s*(to|at)|leads?\s*to)\b/i.test(message)) score += 2;
+
+  // Complex layouts
+  if (/\b(grid|column|row|layout|align|distribute|evenly\s*spaced)\b/i.test(message)) score += 2;
+
+  // Long/detailed requests tend to be complex
+  const wordCount = message.split(/\s+/).length;
+  if (wordCount > 30) score += 2;
+  else if (wordCount > 20) score += 1;
+
+  return score;
+}
+
+/**
+ * Selects the appropriate model based on request complexity.
+ * Returns the user's explicit choice if provided, otherwise auto-routes.
+ */
+export function selectModel(message: string, userModel?: string): string {
+  // User explicitly chose a model - respect it
+  if (userModel && userModel !== "auto") {
+    return userModel;
+  }
+
+  const score = scoreComplexity(message);
+  return score >= COMPLEXITY_THRESHOLD ? COMPLEX_MODEL : SIMPLE_MODEL;
+}
 
 const BASE_SYSTEM_PROMPT = `You are a slide design assistant. You output HTML that will be rendered inside a 16:9 slide container.
 
