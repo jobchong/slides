@@ -93,3 +93,40 @@ export interface Slide {
   html: string;
   source?: SlideSource;       // Structured data for editing
 }
+
+// Diagram Intent - semantic description for layout engine
+export interface DiagramNode {
+  id: string;
+  label: string;
+  sublabel?: string;
+  style?: {
+    shape?: "rect" | "roundRect" | "ellipse" | "diamond";
+    fill?: string;
+    stroke?: string;
+    textColor?: string;
+  };
+}
+
+export interface DiagramConnector {
+  from: string;
+  to: string;
+  label?: string;
+  style?: {
+    stroke?: string;
+    arrowHead?: "arrow" | "none";
+    dashed?: boolean;
+  };
+}
+
+export type DiagramLayout =
+  | { type: "flowchart"; direction: "horizontal" | "vertical" }
+  | { type: "grid"; columns: number }
+  | { type: "hierarchy"; direction: "top-down" | "left-right" };
+
+export interface DiagramIntent {
+  layout: DiagramLayout;
+  nodes: DiagramNode[];
+  connectors: DiagramConnector[];
+  background?: SlideBackground;
+  freeformElements?: EditableElement[];  // titles, annotations
+}

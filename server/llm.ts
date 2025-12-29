@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { GoogleGenAI } from "@google/genai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import type { DiagramIntent } from "../app/src/types";
 
 interface Message {
   role: "user" | "assistant";
@@ -149,7 +150,56 @@ Use this when:
 - You need specific information (colors, layout preference, content)
 - Multiple interpretations are possible
 
-When using <clarify>, output ONLY the clarify tag - no HTML, no other text.`;
+When using <clarify>, output ONLY the clarify tag - no HTML, no other text.
+
+## Structured Diagrams
+
+For flowcharts, process diagrams, grids, or hierarchies, use the structured diagram format instead of raw HTML. This ensures perfect positioning.
+
+<diagram>
+{
+  "layout": { "type": "flowchart", "direction": "horizontal" },
+  "nodes": [
+    { "id": "a", "label": "Start", "style": { "fill": "#4A90D9" } },
+    { "id": "b", "label": "Process", "style": { "fill": "#5CB85C" } },
+    { "id": "c", "label": "End", "style": { "fill": "#D9534F" } }
+  ],
+  "connectors": [
+    { "from": "a", "to": "b" },
+    { "from": "b", "to": "c" }
+  ]
+}
+</diagram>
+
+Layout types:
+- flowchart: Linear flow with direction "horizontal" or "vertical"
+- grid: Matrix arrangement with { "type": "grid", "columns": 3 }
+- hierarchy: Tree structure with direction "top-down" or "left-right"
+
+Node styles:
+- shape: "rect", "roundRect", "ellipse", "diamond"
+- fill: hex color like "#4A90D9"
+- stroke: border color
+- textColor: text color (default white)
+
+Connector styles:
+- stroke: line color
+- arrowHead: "arrow" or "none"
+- dashed: true for dashed lines
+
+Use <diagram> when:
+- User asks for a flowchart, process diagram, or workflow
+- Multiple boxes or shapes need to be connected with arrows
+- Elements should be evenly distributed or aligned
+- Creating org charts, decision trees, or step-by-step processes
+
+Continue using raw HTML for:
+- Simple title slides with just text
+- Text-only content
+- Freeform layouts where specific positioning is requested
+- Single elements or decorative shapes
+
+When using <diagram>, output ONLY the diagram tag with valid JSON - no HTML, no other text.`;
 
 function buildSystemPrompt(_currentHtml: string): string {
   return BASE_SYSTEM_PROMPT;
@@ -422,4 +472,40 @@ export async function* generateSlideStream(
 
 export function getDefaultModel() {
   return DEFAULT_MODEL;
+}
+
+/**
+ * Parsed output from the model.
+ */
+export type ParsedModelOutput =
+  | { type: "diagram"; intent: DiagramIntent }
+  | { type: "html"; html: string }
+  | { type: "clarify"; question: string };
+
+/**
+ * Parse model output to detect diagram, clarify, or raw HTML content.
+ */
+export function parseModelOutput(raw: string): ParsedModelOutput {
+  const trimmed = raw.trim();
+
+  // Check for clarify tag first
+  const clarifyMatch = trimmed.match(/<clarify>([\s\S]*?)<\/clarify>/);
+  if (clarifyMatch) {
+    return { type: "clarify", question: clarifyMatch[1].trim() };
+  }
+
+  // Check for diagram tag
+  const diagramMatch = trimmed.match(/<diagram>([\s\S]*?)<\/diagram>/);
+  if (diagramMatch) {
+    try {
+      const intent = JSON.parse(diagramMatch[1]) as DiagramIntent;
+      return { type: "diagram", intent };
+    } catch (e) {
+      // Invalid JSON, fall back to HTML
+      console.warn("Failed to parse diagram JSON:", e);
+    }
+  }
+
+  // Default to raw HTML
+  return { type: "html", html: raw };
 }

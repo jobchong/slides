@@ -7,7 +7,8 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { transcribeAudio } from "./groq";
-import { generateSlide, generateSlideStream, getDefaultModel, selectModel } from "./llm";
+import { generateSlide, generateSlideStream, getDefaultModel, selectModel, parseModelOutput } from "./llm";
+import { layoutDiagram } from "./layout";
 import { importPptx } from "./import";
 import { buildGatewayUrl, buildS3PublicUploadUrl, buildStoredImageUrl } from "./gateway";
 import type { ImportOptions } from "./import/types";
@@ -278,14 +279,43 @@ async function handleGenerateStream(req: Request): Promise<Response> {
     const stream = new ReadableStream({
       async start(controller) {
         try {
+          // Accumulate response to detect diagrams
+          let accumulated = "";
+
           for await (const chunk of generateSlideStream(
             messages,
             currentHtml,
             selectedModel
           )) {
+            accumulated += chunk;
             totalLength += chunk.length;
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+
+            // Stream chunks for non-diagram content (for responsive UI)
+            // If it looks like a diagram is starting, buffer everything
+            // Check for partial tag "<diagram" (without closing >) to catch early
+            if (!accumulated.includes("<diagram")) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            }
           }
+
+          // After streaming completes, check if it's a diagram
+          const parsed = parseModelOutput(accumulated);
+
+          if (parsed.type === "diagram") {
+            // Process diagram through layout engine
+            const { html } = layoutDiagram(parsed.intent);
+            logInfo("Diagram processed", {
+              nodeCount: parsed.intent.nodes.length,
+              layout: parsed.intent.layout.type,
+            });
+            // Send the rendered HTML as a single chunk
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(html)}\n\n`));
+          } else if (accumulated.includes("<diagram>")) {
+            // We buffered diagram content but parsing failed - send raw
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(accumulated)}\n\n`));
+          }
+          // For non-diagram content, chunks were already sent
+
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           controller.close();
 
@@ -294,6 +324,7 @@ async function handleGenerateStream(req: Request): Promise<Response> {
             model: selectedModel,
             totalLength,
             durationMs,
+            outputType: parsed.type,
           });
         } catch (error) {
           const errorMessage =
