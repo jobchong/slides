@@ -53,6 +53,7 @@ export interface ShapeElement {
   fill: string | "none";
   stroke?: string;
   strokeWidth?: number;
+  strokeDasharray?: string;
   borderRadius?: number;
   lineCap?: "round" | "square" | "flat";
   lineHead?: "oval" | "none";

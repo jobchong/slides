@@ -161,6 +161,7 @@ export interface EditableShapeElement {
   fill: string | "none";
   stroke?: string;
   strokeWidth?: number;
+  strokeDasharray?: string;
   borderRadius?: number;
   svg?: string;
   lineCap?: "round" | "square" | "flat";

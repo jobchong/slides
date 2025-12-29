@@ -16,9 +16,10 @@ interface ConnectorElement {
   zIndex: number;
   shape: {
     kind: "custom";
-    fill: "none";
+    fill: string | "none";
     stroke: string;
     strokeWidth: number;
+    strokeDasharray?: string;
     svgPath: string;
     svgViewBox: { width: number; height: number };
   };
@@ -93,6 +94,7 @@ export function createConnector(
   // Build SVG path with optional arrowhead
   const stroke = style.stroke || "#333333";
   const strokeWidth = style.strokeWidth || 2;
+  const strokeDasharray = style.dashed ? "6 4" : undefined;
   const showArrow = style.arrowHead !== "none";
 
   // Create path data - line stops short to make room for arrowhead
@@ -127,6 +129,7 @@ export function createConnector(
       fill: showArrow ? stroke : "none",  // Fill arrowhead with stroke color
       stroke,
       strokeWidth,
+      strokeDasharray,
       svgPath: pathData,
       svgViewBox: { width: viewBoxWidth, height: viewBoxHeight },
     },

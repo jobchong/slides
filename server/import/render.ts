@@ -145,9 +145,11 @@ function renderTextElement(element: EditableElement): string {
     const fill = shape.fill && shape.fill !== "none" ? shape.fill : "none";
     const stroke = shape.stroke || "none";
     const strokeWidth = stroke !== "none" ? (shape.strokeWidth || 1) * pointsToPx : 0;
+    const strokeDasharray = shape.strokeDasharray;
+    const dashAttr = strokeDasharray ? ` stroke-dasharray="${strokeDasharray}"` : "";
     customSvg = `
       <svg viewBox="0 0 ${viewBox.width} ${viewBox.height}" preserveAspectRatio="none" style="position:absolute; inset:0; width:100%; height:100%; display:block; z-index:0;">
-        <path d="${shape.svgPath}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>
+        <path d="${shape.svgPath}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}"${dashAttr} stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>
       </svg>
     `.trim();
     cssProps.push("background: none");
@@ -256,9 +258,11 @@ function renderShapeElement(element: EditableElement): string {
   if (shape.kind === "line") {
     const stroke = shape.stroke || "#000";
     const lineCap = shape.lineCap === "round" ? "round" : shape.lineCap === "square" ? "square" : "butt";
+    const strokeDasharray = shape.strokeDasharray;
+    const dashAttr = strokeDasharray ? ` stroke-dasharray="${strokeDasharray}"` : "";
     lineSvg = `
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="width:100%; height:100%; display:block;">
-        <line x1="0" y1="50" x2="100" y2="50" stroke="${stroke}" stroke-width="${strokeWidthPx}" stroke-linecap="${lineCap}"></line>
+        <line x1="0" y1="50" x2="100" y2="50" stroke="${stroke}" stroke-width="${strokeWidthPx}" stroke-linecap="${lineCap}"${dashAttr}></line>
       </svg>
     `.trim();
   }
@@ -270,9 +274,11 @@ function renderShapeElement(element: EditableElement): string {
     const stroke = shape.stroke || "none";
     const lineCap = shape.lineCap === "round" ? "round" : shape.lineCap === "square" ? "square" : "butt";
     const strokeWidth = stroke !== "none" ? strokeWidthPx : 0;
+    const strokeDasharray = shape.strokeDasharray;
+    const dashAttr = strokeDasharray ? ` stroke-dasharray="${strokeDasharray}"` : "";
     customSvg = `
       <svg viewBox="0 0 ${viewBox.width} ${viewBox.height}" preserveAspectRatio="none" style="width:100%; height:100%; display:block;">
-        <path d="${shape.svgPath}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="${lineCap}" stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>
+        <path d="${shape.svgPath}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="${lineCap}"${dashAttr} stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>
       </svg>
     `.trim();
   }

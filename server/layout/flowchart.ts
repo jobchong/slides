@@ -79,6 +79,8 @@ export function layoutFlowchart(
     const shape = style.shape || "roundRect";
     const fill = style.fill || getDefaultColor(i);
     const textColor = style.textColor || "#ffffff";
+    const shapeKind =
+      shape === "ellipse" ? "ellipse" : shape === "diamond" ? "custom" : shape === "rect" ? "rect" : "roundRect";
 
     elements.push({
       id: pn.node.id,
@@ -98,11 +100,11 @@ export function layoutFlowchart(
         },
       },
       shape: {
-        kind: shape === "ellipse" ? "ellipse" : shape === "diamond" ? "custom" : "roundRect",
+        kind: shapeKind,
         fill,
         stroke: style.stroke,
         strokeWidth: style.stroke ? 2 : undefined,
-        borderRadius: shape === "roundRect" || shape === "rect" ? 8 : undefined,
+        borderRadius: shape === "roundRect" ? 8 : undefined,
         // Diamond SVG path
         ...(shape === "diamond" && {
           svgPath: "M 50 0 L 100 50 L 50 100 L 0 50 Z",
