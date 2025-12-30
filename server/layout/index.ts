@@ -11,6 +11,7 @@ import type { SlideSource } from "../import/types";
 import { renderSlideHtml } from "../import/render";
 import { layoutFlowchart } from "./flowchart";
 import { layoutHierarchy } from "./hierarchy";
+import { layoutGrid } from "./grid";
 
 export interface LayoutResult {
   source: SlideSource;
@@ -56,7 +57,7 @@ function computeLayout(intent: DiagramIntent): EditableElement[] {
       }) as EditableElement[];
 
     case "grid":
-      return layoutGrid(nodes, layout.columns);
+      return layoutGrid(nodes, connectors, { columns: layout.columns }) as EditableElement[];
 
     case "hierarchy":
       return layoutHierarchy(nodes, connectors, { direction: layout.direction }) as EditableElement[];
@@ -71,60 +72,6 @@ function computeLayout(intent: DiagramIntent): EditableElement[] {
  * Grid layout: arrange nodes in a matrix with specified columns.
  * TODO: Full implementation
  */
-function layoutGrid(
-  nodes: import("../../app/src/types").DiagramNode[],
-  columns: number
-): EditableElement[] {
-  if (nodes.length === 0) return [];
-
-  const rows = Math.ceil(nodes.length / columns);
-  const cellWidth = 80 / columns;
-  const cellHeight = 60 / rows;
-  const nodeWidth = cellWidth * 0.7;
-  const nodeHeight = cellHeight * 0.7;
-  const startX = 10;
-  const startY = 20;
-
-  const elements: EditableElement[] = [];
-
-  nodes.forEach((node, i) => {
-    const col = i % columns;
-    const row = Math.floor(i / columns);
-    const style = node.style || {};
-
-    elements.push({
-      id: node.id,
-      type: "text",
-      bounds: {
-        x: startX + col * cellWidth + (cellWidth - nodeWidth) / 2,
-        y: startY + row * cellHeight + (cellHeight - nodeHeight) / 2,
-        width: nodeWidth,
-        height: nodeHeight,
-      },
-      zIndex: i + 1,
-      text: {
-        content: node.label,
-        style: {
-          fontFamily: "Inter",
-          fontSize: 16,
-          fontWeight: "bold",
-          fontStyle: "normal",
-          color: style.textColor || "#ffffff",
-          align: "center",
-          verticalAlign: "middle",
-        },
-      },
-      shape: {
-        kind: "roundRect",
-        fill: style.fill || getDefaultColor(i),
-        borderRadius: 8,
-      },
-    });
-  });
-
-  return elements;
-}
-
 /**
  * Hierarchy layout: tree structure.
  * TODO: Full implementation with proper tree layout algorithm
@@ -142,14 +89,3 @@ function convertBackground(bg?: SlideBackground): SlideBackground {
 /**
  * Default color palette.
  */
-function getDefaultColor(index: number): string {
-  const colors = [
-    "#4A90D9",
-    "#5CB85C",
-    "#F0AD4E",
-    "#D9534F",
-    "#9B59B6",
-    "#1ABC9C",
-  ];
-  return colors[index % colors.length];
-}
