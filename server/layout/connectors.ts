@@ -98,7 +98,8 @@ export function createConnector(
   const showArrow = style.arrowHead !== "none";
 
   // Create path data - line stops short to make room for arrowhead
-  const arrowSize = showArrow ? 12 : 0;
+  const lineLength = Math.hypot(relToX - relFromX, relToY - relFromY);
+  const arrowSize = showArrow ? Math.min(14, Math.max(6, lineLength * 0.25)) : 0;
   const angle = Math.atan2(relToY - relFromY, relToX - relFromX);
 
   // Shorten the line to meet the arrow base
