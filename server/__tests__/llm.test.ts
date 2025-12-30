@@ -23,4 +23,22 @@ describe("parseModelOutput", () => {
       expect(parsed.intent.nodes.length).toBe(1);
     }
   });
+
+  test("parses diagram JSON with trailing commas", () => {
+    const output = `
+      <diagram>
+      {
+        "layout": { "type": "flowchart", "direction": "horizontal" },
+        "nodes": [{ "id": "a", "label": "Start" },],
+        "connectors": [],
+      }
+      </diagram>
+    `;
+
+    const parsed = parseModelOutput(output);
+    expect(parsed.type).toBe("diagram");
+    if (parsed.type === "diagram") {
+      expect(parsed.intent.nodes.length).toBe(1);
+    }
+  });
 });

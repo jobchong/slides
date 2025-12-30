@@ -498,18 +498,10 @@ export function parseModelOutput(raw: string): ParsedModelOutput {
   // Check for diagram tag
   const diagramMatch = trimmed.match(/<diagram>([\s\S]*?)<\/diagram>/);
   if (diagramMatch) {
-    try {
-      const intent = JSON.parse(diagramMatch[1]) as DiagramIntent;
-      return { type: "diagram", intent };
-    } catch (e) {
-      try {
-        const cleaned = stripCodeFences(diagramMatch[1]);
-        const intent = JSON.parse(cleaned) as DiagramIntent;
-        return { type: "diagram", intent };
-      } catch (innerError) {
-        // Invalid JSON, fall back to HTML
-        console.warn("Failed to parse diagram JSON:", innerError);
-      }
+    const rawDiagram = diagramMatch[1];
+    const parsed = tryParseDiagram(rawDiagram);
+    if (parsed) {
+      return { type: "diagram", intent: parsed };
     }
   }
 
@@ -521,4 +513,23 @@ function stripCodeFences(value: string): string {
   const trimmed = value.trim();
   const fenceMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
   return fenceMatch ? fenceMatch[1].trim() : trimmed;
+}
+
+function tryParseDiagram(value: string): DiagramIntent | null {
+  try {
+    return JSON.parse(value) as DiagramIntent;
+  } catch (error) {
+    try {
+      const cleaned = stripCodeFences(value);
+      const sanitized = stripTrailingCommas(cleaned);
+      return JSON.parse(sanitized) as DiagramIntent;
+    } catch (innerError) {
+      console.warn("Failed to parse diagram JSON:", innerError);
+      return null;
+    }
+  }
+}
+
+function stripTrailingCommas(value: string): string {
+  return value.replace(/,\s*([}\]])/g, "$1");
 }
