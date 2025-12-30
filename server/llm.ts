@@ -186,6 +186,7 @@ Connector styles:
 - stroke: line color
 - arrowHead: "arrow" or "none"
 - dashed: true for dashed lines
+- label: short text to place on the connector
 
 Use <diagram> when:
 - User asks for a flowchart, process diagram, or workflow
