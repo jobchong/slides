@@ -23,6 +23,9 @@ const NODE_ASPECT_RATIO = 1.5;  // width:height for horizontal, height:width for
 const MIN_NODE_SIZE = 12;       // minimum dimension in %
 const MAX_NODE_SIZE = 25;       // maximum dimension in %
 const GAP_RATIO = 0.3;          // gap as fraction of node size
+const BASE_FONT_SIZE = 18;      // px for a ~20% node height
+const MIN_FONT_SIZE = 11;
+const MAX_FONT_SIZE = 22;
 
 /**
  * Layout nodes in a linear flow (horizontal or vertical).
@@ -37,7 +40,7 @@ export function layoutFlowchart(
   type: "text" | "shape";
   bounds: Bounds;
   zIndex: number;
-  text?: { content: string; style: any };
+  text?: { content: string; style: any; insets?: { l?: number; r?: number; t?: number; b?: number } };
   shape?: any;
 }> {
   if (nodes.length === 0) return [];
@@ -68,10 +71,10 @@ export function layoutFlowchart(
     id: string;
     type: "text" | "shape";
     bounds: Bounds;
-    zIndex: number;
-    text?: { content: string; style: any };
-    shape?: any;
-  }> = [];
+  zIndex: number;
+  text?: { content: string; style: any; insets?: { l?: number; r?: number; t?: number; b?: number } };
+  shape?: any;
+}> = [];
 
   // Create node elements (text with shape background)
   positionedNodes.forEach((pn, i) => {
@@ -81,6 +84,9 @@ export function layoutFlowchart(
     const textColor = style.textColor || "#ffffff";
     const shapeKind =
       shape === "ellipse" ? "ellipse" : shape === "diamond" ? "custom" : shape === "rect" ? "rect" : "roundRect";
+    const content = pn.node.label + (pn.node.sublabel ? `\n${pn.node.sublabel}` : "");
+    const fontSize = calculateFontSize(pn.bounds, content);
+    const textInsets = calculateTextInsets(fontSize);
 
     elements.push({
       id: pn.node.id,
@@ -88,16 +94,17 @@ export function layoutFlowchart(
       bounds: pn.bounds,
       zIndex: i + 1,
       text: {
-        content: pn.node.label + (pn.node.sublabel ? `\n${pn.node.sublabel}` : ""),
+        content,
         style: {
           fontFamily: "Inter",
-          fontSize: 18,
+          fontSize,
           fontWeight: "bold",
           fontStyle: "normal",
           color: textColor,
           align: "center",
           verticalAlign: "middle",
         },
+        insets: textInsets,
       },
       shape: {
         kind: shapeKind,
@@ -166,7 +173,12 @@ function calculateNodeDimensions(
   let primaryNodeSize = primarySize / denominator;
 
   // Clamp to min/max
-  primaryNodeSize = Math.max(MIN_NODE_SIZE, Math.min(MAX_NODE_SIZE, primaryNodeSize));
+  if (primaryNodeSize > MAX_NODE_SIZE) {
+    primaryNodeSize = MAX_NODE_SIZE;
+  } else if (primaryNodeSize < MIN_NODE_SIZE) {
+    const minTotal = nodeCount * MIN_NODE_SIZE + (nodeCount - 1) * MIN_NODE_SIZE * GAP_RATIO;
+    primaryNodeSize = minTotal <= primarySize ? MIN_NODE_SIZE : primarySize / denominator;
+  }
 
   // Secondary dimension based on aspect ratio and available space
   let secondaryNodeSize = primaryNodeSize / NODE_ASPECT_RATIO;
@@ -242,4 +254,31 @@ function getDefaultColor(index: number): string {
     "#3498DB",  // light blue
   ];
   return colors[index % colors.length];
+}
+
+function calculateFontSize(bounds: Bounds, content: string): number {
+  const minDimension = Math.min(bounds.width, bounds.height);
+  const scale = minDimension / 20;
+  let fontSize = Math.round(BASE_FONT_SIZE * scale);
+  const cleanLength = content.replace(/\s+/g, "").length;
+
+  if (cleanLength > 24) {
+    fontSize = Math.round(fontSize * 0.85);
+  }
+  if (cleanLength > 36) {
+    fontSize = Math.round(fontSize * 0.75);
+  }
+
+  return Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, fontSize));
+}
+
+function calculateTextInsets(fontSizePx: number): { l: number; r: number; t: number; b: number } {
+  const pointsToPx = 96 / 72;
+  const insetPt = Math.max(3.5, Math.min(8, (fontSizePx * 0.5) / pointsToPx));
+  return {
+    l: insetPt,
+    r: insetPt,
+    t: insetPt,
+    b: insetPt,
+  };
 }
