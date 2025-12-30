@@ -126,12 +126,11 @@ export function useAudioRecorder(): UseAudioRecorderResult {
 
   const stopRecording = useCallback((): Promise<Blob | null> => {
     return new Promise((resolve) => {
-      if (!mediaRecorderRef.current || recordingState !== "recording") {
+      const mediaRecorder = mediaRecorderRef.current;
+      if (!mediaRecorder || mediaRecorder.state !== "recording") {
         resolve(null);
         return;
       }
-
-      const mediaRecorder = mediaRecorderRef.current;
 
       mediaRecorder.onstop = () => {
         if (timerRef.current) {
@@ -151,10 +150,10 @@ export function useAudioRecorder(): UseAudioRecorderResult {
 
       mediaRecorder.stop();
     });
-  }, [recordingState]);
+  }, []);
 
   const cancelRecording = useCallback(() => {
-    if (mediaRecorderRef.current && recordingState === "recording") {
+    if (mediaRecorderRef.current?.state === "recording") {
       mediaRecorderRef.current.stop();
     }
 
@@ -172,7 +171,7 @@ export function useAudioRecorder(): UseAudioRecorderResult {
     setRecordingState("idle");
     setRecordingDuration(0);
     setError(null);
-  }, [recordingState]);
+  }, []);
 
   return {
     recordingState,
