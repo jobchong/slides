@@ -12,6 +12,6 @@ Quick orientation for agents working in this repo:
 ## Autonomy loop expectations
 
 - **Mode**: Work mostly autonomously. Only ask when a shell command or URL needs permission; do not spend time on workarounds.
-- **Loop**: Identify a concrete product improvement, implement it, review output, add tests, then move to the next improvement.
+- **Loop**: Identify a concrete product improvement, implement it, review output, add tests, commit, then immediately move to the next improvement.
 - **Validation**: Prefer inspecting generated HTML/JSON output and diffs; you cannot open a browser here.
 - **Commits**: Commit after each improvement loop so changes are easy to revert. Use concise conventional commit messages (e.g., `fix: ...`, `feat: ...`).
