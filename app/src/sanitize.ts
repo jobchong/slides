@@ -1,3 +1,33 @@
+import DOMPurify from "dompurify";
+
+const DOMPURIFY_CONFIG = {
+  USE_PROFILES: { html: true, svg: true },
+  ALLOW_DATA_ATTR: true,
+  ADD_TAGS: ["svg", "path", "line", "defs", "marker", "polygon", "rect", "circle", "ellipse", "g"],
+  ADD_ATTR: [
+    "style",
+    "viewBox",
+    "preserveAspectRatio",
+    "markerWidth",
+    "markerHeight",
+    "refX",
+    "refY",
+    "orient",
+    "marker-end",
+    "marker-start",
+    "stroke",
+    "stroke-width",
+    "stroke-dasharray",
+    "stroke-linecap",
+    "fill",
+    "x1",
+    "y1",
+    "x2",
+    "y2",
+    "d",
+  ],
+};
+
 const FORBIDDEN_TAGS = new Set([
   "script",
   "iframe",
@@ -17,7 +47,7 @@ function isUnsafeStyle(value: string): boolean {
   return /url\((['\"]?)\s*javascript:/i.test(value);
 }
 
-export function sanitizeHtml(input: string): string {
+function sanitizeWithDomParser(input: string): string {
   if (typeof DOMParser === "undefined") return input;
 
   const parser = new DOMParser();
@@ -58,4 +88,12 @@ export function sanitizeHtml(input: string): string {
   }
 
   return root.innerHTML;
+}
+
+export function sanitizeHtml(input: string): string {
+  if (typeof window !== "undefined" && typeof DOMPurify?.sanitize === "function") {
+    return DOMPurify.sanitize(input, DOMPURIFY_CONFIG);
+  }
+
+  return sanitizeWithDomParser(input);
 }
