@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { act, render } from "@testing-library/react";
 import { useEffect } from "react";
@@ -6,8 +6,15 @@ import { useEffect } from "react";
 import { useAudioRecorder } from "../hooks/useAudioRecorder";
 
 describe("useAudioRecorder", () => {
-  test("stops recording with the initial stop callback", async () => {
+  beforeAll(() => {
     GlobalRegistrator.register();
+  });
+
+  afterAll(() => {
+    GlobalRegistrator.unregister();
+  });
+
+  test("stops recording with the initial stop callback", async () => {
 
     const originalMediaRecorder = globalThis.MediaRecorder;
     const originalNavigator = globalThis.navigator;
@@ -94,6 +101,5 @@ describe("useAudioRecorder", () => {
       configurable: true,
       writable: true,
     });
-
   });
 });
