@@ -23,18 +23,19 @@ export interface LayoutResult {
  * This is the main entry point for the layout engine.
  */
 export function layoutDiagram(intent: DiagramIntent): LayoutResult {
+  const normalized = normalizeDiagramIntent(intent);
   // Compute layout based on diagram type
-  const layoutElements = computeLayout(intent);
+  const layoutElements = computeLayout(normalized);
 
   // Merge with any freeform elements
   const allElements: EditableElement[] = [
     ...layoutElements,
-    ...(intent.freeformElements || []),
+    ...(normalized.freeformElements || []),
   ];
 
   // Build SlideSource
   const source: SlideSource = {
-    background: convertBackground(intent.background),
+    background: convertBackground(normalized.background),
     elements: allElements,
   };
 
@@ -65,6 +66,47 @@ function computeLayout(intent: DiagramIntent): EditableElement[] {
     default:
       // Freeform: no automatic layout
       return [];
+  }
+}
+
+function normalizeDiagramIntent(intent: DiagramIntent): DiagramIntent {
+  const nodes = Array.isArray(intent.nodes) ? intent.nodes : [];
+  const connectors = Array.isArray(intent.connectors) ? intent.connectors : [];
+  const layout = normalizeLayout(intent.layout, nodes.length);
+
+  return {
+    ...intent,
+    layout,
+    nodes,
+    connectors,
+  };
+}
+
+function normalizeLayout(layout: DiagramLayout | undefined, nodeCount: number): DiagramLayout {
+  if (!layout || typeof layout !== "object") {
+    return { type: "flowchart", direction: "horizontal" };
+  }
+
+  switch (layout.type) {
+    case "flowchart":
+      return {
+        type: "flowchart",
+        direction: layout.direction === "vertical" ? "vertical" : "horizontal",
+      };
+    case "grid": {
+      const columns =
+        typeof layout.columns === "number" && layout.columns > 0
+          ? layout.columns
+          : Math.max(1, Math.ceil(Math.sqrt(nodeCount || 1)));
+      return { type: "grid", columns };
+    }
+    case "hierarchy":
+      return {
+        type: "hierarchy",
+        direction: layout.direction === "left-right" ? "left-right" : "top-down",
+      };
+    default:
+      return { type: "flowchart", direction: "horizontal" };
   }
 }
 
