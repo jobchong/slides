@@ -204,7 +204,8 @@ export interface ImportProgress {
 export async function importPptx(
   file: File,
   onProgress: (progress: ImportProgress) => void,
-  onSlide: (slide: Slide) => void
+  onSlide: (slide: Slide) => void,
+  options?: { signal?: AbortSignal }
 ): Promise<void> {
   const serverUrl = import.meta.env.VITE_SERVER_URL || "http://localhost:4000";
 
@@ -214,6 +215,7 @@ export async function importPptx(
   const response = await fetch(`${serverUrl}/api/import`, {
     method: "POST",
     body: formData,
+    signal: options?.signal,
   });
 
   if (!response.ok) {

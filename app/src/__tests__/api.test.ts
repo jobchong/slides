@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { callModelStream } from "../api";
+import { callModelStream, importPptx } from "../api";
 
 describe("callModelStream", () => {
   test("handles CRLF SSE line endings", async () => {
@@ -31,6 +31,32 @@ describe("callModelStream", () => {
 
       expect(latest).toBe("Hello");
       expect(result.html).toBe("Hello");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("passes abort signals to import fetch", async () => {
+    const originalFetch = globalThis.fetch;
+    const controller = new AbortController();
+    let receivedSignal: AbortSignal | null = null;
+
+    globalThis.fetch = async (_url, options) => {
+      receivedSignal = (options?.signal as AbortSignal) || null;
+      const stream = new ReadableStream<Uint8Array>({
+        start(controllerStream) {
+          controllerStream.close();
+        },
+      });
+      return new Response(stream, { status: 200 });
+    };
+
+    try {
+      const file = new File([new Uint8Array([1, 2, 3])], "test.pptx", {
+        type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      });
+      await importPptx(file, () => {}, () => {}, { signal: controller.signal });
+      expect(receivedSignal).toBe(controller.signal);
     } finally {
       globalThis.fetch = originalFetch;
     }

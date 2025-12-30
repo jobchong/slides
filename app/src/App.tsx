@@ -29,6 +29,7 @@ export default function App() {
   const [importProgress, setImportProgress] = useState<ImportProgressType | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importAbortRef = useRef(false);
+  const importControllerRef = useRef<AbortController | null>(null);
   const initialModel =
     import.meta.env.VITE_DEFAULT_MODEL || MODEL_OPTIONS[0].value;
   const [model, setModel] = useState(initialModel);
@@ -160,6 +161,8 @@ export default function App() {
 
   const handleImportCancel = () => {
     importAbortRef.current = true;
+    importControllerRef.current?.abort();
+    importControllerRef.current = null;
     setIsImporting(false);
     setImportProgress(null);
   };
@@ -174,6 +177,7 @@ export default function App() {
     setIsImporting(true);
     setImportProgress({ type: "progress", status: "Starting import..." });
     importAbortRef.current = false;
+    importControllerRef.current = new AbortController();
 
     const initialSlideCount = slides.length;
     const replacingEmptySlide =
@@ -199,7 +203,8 @@ export default function App() {
             }
             return [...prev, normalizedSlide];
           });
-        }
+        },
+        { signal: importControllerRef.current.signal }
       );
 
       if (!importAbortRef.current && importedSlides.length > 0) {
@@ -208,9 +213,12 @@ export default function App() {
         setMessages([]);
       }
     } catch (err) {
-      console.error("Import failed:", err);
-      setError(err instanceof Error ? err.message : "Import failed");
+      if (!importAbortRef.current) {
+        console.error("Import failed:", err);
+        setError(err instanceof Error ? err.message : "Import failed");
+      }
     } finally {
+      importControllerRef.current = null;
       setIsImporting(false);
       setImportProgress(null);
     }
