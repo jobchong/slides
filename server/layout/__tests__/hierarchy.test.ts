@@ -50,4 +50,28 @@ describe("layoutHierarchy", () => {
     expect(label).toBeDefined();
     expect(label?.type).toBe("text");
   });
+
+  test("uses the deepest parent when multiple paths exist", () => {
+    const elements = layoutHierarchy(
+      [
+        { id: "root", label: "Root" },
+        { id: "mid", label: "Mid" },
+        { id: "leaf", label: "Leaf" },
+        { id: "direct", label: "Direct" },
+      ],
+      [
+        { from: "root", to: "mid" },
+        { from: "mid", to: "leaf" },
+        { from: "direct", to: "leaf" },
+      ],
+      { direction: "top-down" }
+    );
+
+    const map = new Map(
+      elements.filter((el) => el.type === "text").map((el) => [el.id, el.bounds])
+    );
+
+    expect(map.get("root")!.y).toBeLessThan(map.get("mid")!.y);
+    expect(map.get("mid")!.y).toBeLessThan(map.get("leaf")!.y);
+  });
 });

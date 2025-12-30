@@ -162,22 +162,23 @@ export function layoutHierarchy(
 }
 
 function buildLevels(nodes: DiagramNode[], connectors: DiagramConnector[]) {
-  const incoming = new Map<string, number>();
+  const inDegree = new Map<string, number>();
   const adjacency = new Map<string, string[]>();
 
   nodes.forEach((node) => {
-    incoming.set(node.id, 0);
+    inDegree.set(node.id, 0);
     adjacency.set(node.id, []);
   });
 
   connectors.forEach((conn) => {
-    if (!incoming.has(conn.from) || !incoming.has(conn.to)) return;
-    incoming.set(conn.to, (incoming.get(conn.to) || 0) + 1);
+    if (!inDegree.has(conn.from) || !inDegree.has(conn.to)) return;
+    inDegree.set(conn.to, (inDegree.get(conn.to) || 0) + 1);
     adjacency.get(conn.from)!.push(conn.to);
   });
 
-  const roots = nodes.filter((node) => (incoming.get(node.id) || 0) === 0);
-  const queue = roots.length > 0 ? roots.map((node) => node.id) : nodes.map((node) => node.id);
+  const queue = nodes
+    .filter((node) => (inDegree.get(node.id) || 0) === 0)
+    .map((node) => node.id);
   const levels = new Map<string, number>();
 
   queue.forEach((id) => levels.set(id, 0));
@@ -186,9 +187,12 @@ function buildLevels(nodes: DiagramNode[], connectors: DiagramConnector[]) {
     const current = queue.shift()!;
     const currentLevel = levels.get(current) || 0;
     for (const child of adjacency.get(current) || []) {
-      if (levels.has(child)) continue;
-      levels.set(child, currentLevel + 1);
-      queue.push(child);
+      const nextLevel = currentLevel + 1;
+      levels.set(child, Math.max(levels.get(child) || 0, nextLevel));
+      inDegree.set(child, (inDegree.get(child) || 0) - 1);
+      if ((inDegree.get(child) || 0) === 0) {
+        queue.push(child);
+      }
     }
   }
 
