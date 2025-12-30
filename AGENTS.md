@@ -15,3 +15,4 @@ Quick orientation for agents working in this repo:
 - **Loop**: Identify a concrete product improvement, implement it, review output, add tests, commit, then immediately move to the next improvement.
 - **Validation**: Prefer inspecting generated HTML/JSON output and diffs; you cannot open a browser here.
 - **Commits**: Commit after each improvement loop so changes are easy to revert. Use concise conventional commit messages (e.g., `fix: ...`, `feat: ...`).
+- **Libraries**: It's OK to introduce external libraries if they clearly improve readability or maintainability; prefer to do so when it meaningfully simplifies custom code.
