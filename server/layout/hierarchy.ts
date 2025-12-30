@@ -154,7 +154,9 @@ export function layoutHierarchy(
         isTopDown,
         connStyle.stroke || "#333333"
       );
-      elements.push(labelElement as any);
+      if (labelElement) {
+        elements.push(labelElement as any);
+      }
     }
   });
 
@@ -361,7 +363,7 @@ function createConnectorLabel(
   zIndex: number;
   text: { content: string; style: any };
   shape: any;
-} {
+} | null {
   const fromEdgeX = isTopDown ? from.x + from.width / 2 : from.x + from.width;
   const fromEdgeY = isTopDown ? from.y + from.height : from.y + from.height / 2;
   const toEdgeX = isTopDown ? to.x + to.width / 2 : to.x;

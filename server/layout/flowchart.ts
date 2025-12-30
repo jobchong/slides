@@ -162,7 +162,9 @@ export function layoutFlowchart(
         isHorizontal,
         connStyle.stroke || "#333333"
       );
-      elements.push(labelElement as any);
+      if (labelElement) {
+        elements.push(labelElement as any);
+      }
     }
   });
 
@@ -314,7 +316,7 @@ function createConnectorLabel(
   zIndex: number;
   text: { content: string; style: any };
   shape: any;
-} {
+} | null {
   const fromEdgeX = isHorizontal ? from.x + from.width : from.x + from.width / 2;
   const fromEdgeY = isHorizontal ? from.y + from.height / 2 : from.y + from.height;
   const toEdgeX = isHorizontal ? to.x : to.x + to.width / 2;
