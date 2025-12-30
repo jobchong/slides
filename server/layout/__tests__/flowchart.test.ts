@@ -53,8 +53,10 @@ describe("layoutFlowchart", () => {
       { direction: "horizontal" }
     );
     const label = elements.find((el) => el.id === "connector-label-0");
+    const node = elements.find((el) => el.id === "node-1");
 
     expect(label).toBeDefined();
     expect(label?.type).toBe("text");
+    expect(label!.zIndex).toBeLessThan(node!.zIndex);
   });
 });

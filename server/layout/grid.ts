@@ -82,7 +82,7 @@ export function layoutGrid(
       id: node.id,
       type: "text",
       bounds,
-      zIndex: i + 1,
+      zIndex: i + 2,
       text: {
         content,
         style: {

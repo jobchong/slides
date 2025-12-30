@@ -93,7 +93,7 @@ export function layoutHierarchy(
       id: pn.node.id,
       type: "text",
       bounds: pn.bounds,
-      zIndex: i + 1,
+      zIndex: i + 2,
       text: {
         content,
         style: {
