@@ -38,4 +38,16 @@ describe("layoutHierarchy", () => {
     expect(map.get("a")!.x).toBeLessThan(map.get("c")!.x);
     expect(map.get("c")!.x).toBeLessThan(map.get("d")!.x);
   });
+
+  test("renders connector labels when provided", () => {
+    const elements = layoutHierarchy(
+      nodes,
+      [{ from: "a", to: "b", label: "Depends on" }],
+      { direction: "top-down" }
+    );
+    const label = elements.find((el) => el.id === "connector-label-0");
+
+    expect(label).toBeDefined();
+    expect(label?.type).toBe("text");
+  });
 });

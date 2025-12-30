@@ -44,4 +44,17 @@ describe("layoutFlowchart", () => {
     expect(insets?.t).toBeGreaterThan(0);
     expect(insets?.b).toBeGreaterThan(0);
   });
+
+  test("renders connector labels when provided", () => {
+    const nodes = buildNodes(2);
+    const elements = layoutFlowchart(
+      nodes,
+      [{ from: "node-1", to: "node-2", label: "Next" }],
+      { direction: "horizontal" }
+    );
+    const label = elements.find((el) => el.id === "connector-label-0");
+
+    expect(label).toBeDefined();
+    expect(label?.type).toBe("text");
+  });
 });

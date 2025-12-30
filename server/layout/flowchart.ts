@@ -26,6 +26,11 @@ const GAP_RATIO = 0.3;          // gap as fraction of node size
 const BASE_FONT_SIZE = 18;      // px for a ~20% node height
 const MIN_FONT_SIZE = 11;
 const MAX_FONT_SIZE = 22;
+const LABEL_FONT_SIZE = 12;
+const LABEL_MIN_WIDTH = 8;
+const LABEL_MAX_WIDTH = 16;
+const LABEL_MIN_HEIGHT = 4;
+const LABEL_MAX_HEIGHT = 9;
 
 /**
  * Layout nodes in a linear flow (horizontal or vertical).
@@ -147,6 +152,18 @@ export function layoutFlowchart(
     );
 
     elements.push(connectorElement as any);
+
+    if (conn.label) {
+      const labelElement = createConnectorLabel(
+        `connector-label-${i}`,
+        conn.label,
+        fromBounds,
+        toBounds,
+        isHorizontal,
+        connStyle.stroke || "#333333"
+      );
+      elements.push(labelElement as any);
+    }
   });
 
   return elements;
@@ -281,4 +298,68 @@ function calculateTextInsets(fontSizePx: number): { l: number; r: number; t: num
     t: insetPt,
     b: insetPt,
   };
+}
+
+function createConnectorLabel(
+  id: string,
+  label: string,
+  from: Bounds,
+  to: Bounds,
+  isHorizontal: boolean,
+  color: string
+): {
+  id: string;
+  type: "text";
+  bounds: Bounds;
+  zIndex: number;
+  text: { content: string; style: any };
+  shape: any;
+} {
+  const fromEdgeX = isHorizontal ? from.x + from.width : from.x + from.width / 2;
+  const fromEdgeY = isHorizontal ? from.y + from.height / 2 : from.y + from.height;
+  const toEdgeX = isHorizontal ? to.x : to.x + to.width / 2;
+  const toEdgeY = isHorizontal ? to.y + to.height / 2 : to.y;
+  const midX = (fromEdgeX + toEdgeX) / 2;
+  const midY = (fromEdgeY + toEdgeY) / 2;
+  const distance = isHorizontal
+    ? Math.abs(toEdgeX - fromEdgeX)
+    : Math.abs(toEdgeY - fromEdgeY);
+
+  const labelWidth = clamp(distance * 0.7, LABEL_MIN_WIDTH, LABEL_MAX_WIDTH);
+  const labelHeight = clamp(labelWidth * 0.4, LABEL_MIN_HEIGHT, LABEL_MAX_HEIGHT);
+
+  return {
+    id,
+    type: "text",
+    bounds: {
+      x: midX - labelWidth / 2,
+      y: midY - labelHeight / 2,
+      width: labelWidth,
+      height: labelHeight,
+    },
+    zIndex: 1,
+    text: {
+      content: label,
+      style: {
+        fontFamily: "Inter",
+        fontSize: LABEL_FONT_SIZE,
+        fontWeight: "bold",
+        fontStyle: "normal",
+        color,
+        align: "center",
+        verticalAlign: "middle",
+      },
+    },
+    shape: {
+      kind: "roundRect",
+      fill: "#ffffff",
+      stroke: "#e5e5e5",
+      strokeWidth: 1,
+      borderRadius: 6,
+    },
+  };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }

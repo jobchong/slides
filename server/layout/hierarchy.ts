@@ -15,6 +15,11 @@ const GAP_RATIO = 0.3;
 const BASE_FONT_SIZE = 18;
 const MIN_FONT_SIZE = 11;
 const MAX_FONT_SIZE = 22;
+const LABEL_FONT_SIZE = 12;
+const LABEL_MIN_WIDTH = 8;
+const LABEL_MAX_WIDTH = 16;
+const LABEL_MIN_HEIGHT = 4;
+const LABEL_MAX_HEIGHT = 9;
 
 interface PositionedNode {
   node: DiagramNode;
@@ -139,6 +144,18 @@ export function layoutHierarchy(
         0
       ) as any
     );
+
+    if (conn.label) {
+      const labelElement = createConnectorLabel(
+        `connector-label-${i}`,
+        conn.label,
+        fromBounds,
+        toBounds,
+        isTopDown,
+        connStyle.stroke || "#333333"
+      );
+      elements.push(labelElement as any);
+    }
   });
 
   return elements;
@@ -324,4 +341,68 @@ function calculateTextInsets(fontSizePx: number): { l: number; r: number; t: num
     t: insetPt,
     b: insetPt,
   };
+}
+
+function createConnectorLabel(
+  id: string,
+  label: string,
+  from: Bounds,
+  to: Bounds,
+  isTopDown: boolean,
+  color: string
+): {
+  id: string;
+  type: "text";
+  bounds: Bounds;
+  zIndex: number;
+  text: { content: string; style: any };
+  shape: any;
+} {
+  const fromEdgeX = isTopDown ? from.x + from.width / 2 : from.x + from.width;
+  const fromEdgeY = isTopDown ? from.y + from.height : from.y + from.height / 2;
+  const toEdgeX = isTopDown ? to.x + to.width / 2 : to.x;
+  const toEdgeY = isTopDown ? to.y : to.y + to.height / 2;
+  const midX = (fromEdgeX + toEdgeX) / 2;
+  const midY = (fromEdgeY + toEdgeY) / 2;
+  const distance = isTopDown
+    ? Math.abs(toEdgeY - fromEdgeY)
+    : Math.abs(toEdgeX - fromEdgeX);
+
+  const labelWidth = clamp(distance * 0.7, LABEL_MIN_WIDTH, LABEL_MAX_WIDTH);
+  const labelHeight = clamp(labelWidth * 0.4, LABEL_MIN_HEIGHT, LABEL_MAX_HEIGHT);
+
+  return {
+    id,
+    type: "text",
+    bounds: {
+      x: midX - labelWidth / 2,
+      y: midY - labelHeight / 2,
+      width: labelWidth,
+      height: labelHeight,
+    },
+    zIndex: 1,
+    text: {
+      content: label,
+      style: {
+        fontFamily: "Inter",
+        fontSize: LABEL_FONT_SIZE,
+        fontWeight: "bold",
+        fontStyle: "normal",
+        color,
+        align: "center",
+        verticalAlign: "middle",
+      },
+    },
+    shape: {
+      kind: "roundRect",
+      fill: "#ffffff",
+      stroke: "#e5e5e5",
+      strokeWidth: 1,
+      borderRadius: 6,
+    },
+  };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
