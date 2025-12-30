@@ -32,4 +32,20 @@ describe("sanitizeHtml", () => {
 
     GlobalRegistrator.unregister();
   });
+
+  test("preserves safe svg markup for diagram connectors", () => {
+    GlobalRegistrator.register();
+
+    const svg = `
+      <svg viewBox="0 0 100 100" style="position:absolute;">
+        <line x1="0" y1="50" x2="100" y2="50" stroke="#333" stroke-width="2" />
+      </svg>
+    `;
+    const clean = sanitizeHtml(svg);
+
+    expect(clean).toContain("<svg");
+    expect(clean).toContain("<line");
+
+    GlobalRegistrator.unregister();
+  });
 });
