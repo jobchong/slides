@@ -10,6 +10,7 @@ import type {
 import type { SlideSource } from "../import/types";
 import { renderSlideHtml } from "../import/render";
 import { layoutFlowchart } from "./flowchart";
+import { layoutHierarchy } from "./hierarchy";
 
 export interface LayoutResult {
   source: SlideSource;
@@ -58,7 +59,7 @@ function computeLayout(intent: DiagramIntent): EditableElement[] {
       return layoutGrid(nodes, layout.columns);
 
     case "hierarchy":
-      return layoutHierarchy(nodes, connectors, layout.direction);
+      return layoutHierarchy(nodes, connectors, { direction: layout.direction }) as EditableElement[];
 
     default:
       // Freeform: no automatic layout
@@ -128,18 +129,6 @@ function layoutGrid(
  * Hierarchy layout: tree structure.
  * TODO: Full implementation with proper tree layout algorithm
  */
-function layoutHierarchy(
-  nodes: import("../../app/src/types").DiagramNode[],
-  connectors: import("../../app/src/types").DiagramConnector[],
-  direction: "top-down" | "left-right"
-): EditableElement[] {
-  // For now, fall back to vertical flowchart
-  // A proper implementation would build a tree and lay out levels
-  return layoutFlowchart(nodes, connectors, {
-    direction: direction === "top-down" ? "vertical" : "horizontal",
-  }) as EditableElement[];
-}
-
 /**
  * Convert optional background to SlideBackground.
  */
