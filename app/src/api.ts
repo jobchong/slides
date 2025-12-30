@@ -110,8 +110,9 @@ export async function callModelStream(
     buffer = lines.pop() || "";
 
     for (const line of lines) {
-      if (line.startsWith("data: ")) {
-        const data = line.slice(6);
+      const trimmedLine = line.trimEnd();
+      if (trimmedLine.startsWith("data: ")) {
+        const data = trimmedLine.slice(6);
         if (data === "[DONE]") {
           return clarifyExtractor.finalize();
         }
@@ -237,8 +238,9 @@ export async function importPptx(
     buffer = lines.pop() || "";
 
     for (const line of lines) {
-      if (line.startsWith("data: ")) {
-        const data = line.slice(6);
+      const trimmedLine = line.trimEnd();
+      if (trimmedLine.startsWith("data: ")) {
+        const data = trimmedLine.slice(6);
         if (data === "[DONE]") {
           return;
         }
