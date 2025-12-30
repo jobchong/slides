@@ -166,16 +166,21 @@ export function layoutHierarchy(
 function buildLevels(nodes: DiagramNode[], connectors: DiagramConnector[]) {
   const inDegree = new Map<string, number>();
   const adjacency = new Map<string, string[]>();
+  const parents = new Map<string, string[]>();
+  const nodeOrder = new Map<string, number>();
 
   nodes.forEach((node) => {
     inDegree.set(node.id, 0);
     adjacency.set(node.id, []);
+    parents.set(node.id, []);
+    nodeOrder.set(node.id, nodeOrder.size);
   });
 
   connectors.forEach((conn) => {
     if (!inDegree.has(conn.from) || !inDegree.has(conn.to)) return;
     inDegree.set(conn.to, (inDegree.get(conn.to) || 0) + 1);
     adjacency.get(conn.from)!.push(conn.to);
+    parents.get(conn.to)!.push(conn.from);
   });
 
   const queue = nodes
@@ -215,6 +220,16 @@ function buildLevels(nodes: DiagramNode[], connectors: DiagramConnector[]) {
 
   for (const bucket of levelBuckets.values()) {
     maxNodesPerLevel = Math.max(maxNodesPerLevel, bucket.length);
+  }
+
+  for (const [level, bucket] of levelBuckets.entries()) {
+    if (level === 0) continue;
+    bucket.sort((a, b) => {
+      const aScore = parentOrderScore(a.id, parents, nodeOrder);
+      const bScore = parentOrderScore(b.id, parents, nodeOrder);
+      if (aScore !== bScore) return aScore - bScore;
+      return (nodeOrder.get(a.id) || 0) - (nodeOrder.get(b.id) || 0);
+    });
   }
 
   return {
@@ -347,6 +362,16 @@ function calculateTextInsets(fontSizePx: number): { l: number; r: number; t: num
     t: insetPt,
     b: insetPt,
   };
+}
+
+function parentOrderScore(
+  nodeId: string,
+  parents: Map<string, string[]>,
+  nodeOrder: Map<string, number>
+): number {
+  const parentIds = parents.get(nodeId) || [];
+  if (parentIds.length === 0) return nodeOrder.get(nodeId) || 0;
+  return Math.min(...parentIds.map((id) => nodeOrder.get(id) || 0));
 }
 
 function createConnectorLabel(

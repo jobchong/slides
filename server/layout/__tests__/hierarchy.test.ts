@@ -74,4 +74,27 @@ describe("layoutHierarchy", () => {
     expect(map.get("root")!.y).toBeLessThan(map.get("mid")!.y);
     expect(map.get("mid")!.y).toBeLessThan(map.get("leaf")!.y);
   });
+
+  test("orders siblings by parent order to reduce crossings", () => {
+    const orderedNodes = [
+      { id: "root-a", label: "Root A" },
+      { id: "root-b", label: "Root B" },
+      { id: "child-b", label: "Child B" },
+      { id: "child-a", label: "Child A" },
+    ];
+    const elements = layoutHierarchy(
+      orderedNodes,
+      [
+        { from: "root-a", to: "child-a" },
+        { from: "root-b", to: "child-b" },
+      ],
+      { direction: "top-down" }
+    );
+
+    const map = new Map(
+      elements.filter((el) => el.type === "text").map((el) => [el.id, el.bounds])
+    );
+
+    expect(map.get("child-a")!.x).toBeLessThan(map.get("child-b")!.x);
+  });
 });
