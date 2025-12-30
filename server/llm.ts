@@ -501,11 +501,23 @@ export function parseModelOutput(raw: string): ParsedModelOutput {
       const intent = JSON.parse(diagramMatch[1]) as DiagramIntent;
       return { type: "diagram", intent };
     } catch (e) {
-      // Invalid JSON, fall back to HTML
-      console.warn("Failed to parse diagram JSON:", e);
+      try {
+        const cleaned = stripCodeFences(diagramMatch[1]);
+        const intent = JSON.parse(cleaned) as DiagramIntent;
+        return { type: "diagram", intent };
+      } catch (innerError) {
+        // Invalid JSON, fall back to HTML
+        console.warn("Failed to parse diagram JSON:", innerError);
+      }
     }
   }
 
   // Default to raw HTML
   return { type: "html", html: raw };
+}
+
+function stripCodeFences(value: string): string {
+  const trimmed = value.trim();
+  const fenceMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return fenceMatch ? fenceMatch[1].trim() : trimmed;
 }
