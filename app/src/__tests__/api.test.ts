@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { callModelStream, importPptx } from "../api";
+import { callModelStream, importPptx, resolveAudioFilename } from "../api";
 
 describe("callModelStream", () => {
   test("handles CRLF SSE line endings", async () => {
@@ -60,5 +60,13 @@ describe("callModelStream", () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  test("resolves filenames for common audio types", () => {
+    expect(resolveAudioFilename("audio/mpeg")).toBe("recording.mp3");
+    expect(resolveAudioFilename("audio/mp4")).toBe("recording.mp4");
+    expect(resolveAudioFilename("audio/ogg")).toBe("recording.ogg");
+    expect(resolveAudioFilename("audio/wav")).toBe("recording.wav");
+    expect(resolveAudioFilename("audio/webm;codecs=opus")).toBe("recording.webm");
   });
 });

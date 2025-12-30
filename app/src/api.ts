@@ -158,14 +158,7 @@ export async function sendVoiceMessage(
   const serverUrl = import.meta.env.VITE_SERVER_URL || "http://localhost:4000";
 
   // Determine file extension based on MIME type
-  let filename = "recording.webm";
-  if (audioBlob.type.includes("mp4")) {
-    filename = "recording.mp4";
-  } else if (audioBlob.type.includes("ogg")) {
-    filename = "recording.ogg";
-  } else if (audioBlob.type.includes("wav")) {
-    filename = "recording.wav";
-  }
+  const filename = resolveAudioFilename(audioBlob.type);
 
   console.log(`Sending audio: ${audioBlob.type} (${audioBlob.size} bytes) as ${filename}`);
 
@@ -188,6 +181,16 @@ export async function sendVoiceMessage(
   const data = await response.json();
   const { html, clarification } = extractClarification(data.html);
   return { html, transcription: data.transcription, clarification };
+}
+
+export function resolveAudioFilename(mimeType: string): string {
+  const lowered = mimeType.toLowerCase();
+  if (lowered.includes("mp4")) return "recording.mp4";
+  if (lowered.includes("mpeg")) return "recording.mp3";
+  if (lowered.includes("ogg")) return "recording.ogg";
+  if (lowered.includes("wav")) return "recording.wav";
+  if (lowered.includes("webm")) return "recording.webm";
+  return "recording.webm";
 }
 
 export interface ImportProgress {
