@@ -100,21 +100,22 @@ export function createConnector(
   // Create path data - line stops short to make room for arrowhead
   const lineLength = Math.hypot(relToX - relFromX, relToY - relFromY);
   const arrowSize = showArrow ? Math.min(14, Math.max(6, lineLength * 0.25)) : 0;
+  const cappedArrowSize = showArrow ? Math.min(arrowSize, lineLength * 0.6) : 0;
   const angle = Math.atan2(relToY - relFromY, relToX - relFromX);
 
   // Shorten the line to meet the arrow base
-  const lineEndX = showArrow ? relToX - arrowSize * Math.cos(angle) : relToX;
-  const lineEndY = showArrow ? relToY - arrowSize * Math.sin(angle) : relToY;
+  const lineEndX = showArrow ? relToX - cappedArrowSize * Math.cos(angle) : relToX;
+  const lineEndY = showArrow ? relToY - cappedArrowSize * Math.sin(angle) : relToY;
 
   let pathData = `M ${relFromX} ${relFromY} L ${lineEndX} ${lineEndY}`;
 
   // Add filled arrowhead triangle
   if (showArrow) {
     // Arrow point coordinates - wider angle for more visible arrow
-    const arrowX1 = relToX - arrowSize * Math.cos(angle - Math.PI / 5);
-    const arrowY1 = relToY - arrowSize * Math.sin(angle - Math.PI / 5);
-    const arrowX2 = relToX - arrowSize * Math.cos(angle + Math.PI / 5);
-    const arrowY2 = relToY - arrowSize * Math.sin(angle + Math.PI / 5);
+    const arrowX1 = relToX - cappedArrowSize * Math.cos(angle - Math.PI / 5);
+    const arrowY1 = relToY - cappedArrowSize * Math.sin(angle - Math.PI / 5);
+    const arrowX2 = relToX - cappedArrowSize * Math.cos(angle + Math.PI / 5);
+    const arrowY2 = relToY - cappedArrowSize * Math.sin(angle + Math.PI / 5);
 
     // Filled triangle path
     pathData += ` M ${relToX} ${relToY} L ${arrowX1} ${arrowY1} L ${arrowX2} ${arrowY2} Z`;

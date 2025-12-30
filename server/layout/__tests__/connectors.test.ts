@@ -57,4 +57,34 @@ describe("createConnector", () => {
     expect(line!.toY).toBeLessThan(relToY);
     expect(line!.toX).toBeCloseTo(relToX, 3);
   });
+
+  test("caps arrow size for short connectors", () => {
+    const connector = createConnector(
+      "c3",
+      { x: 10, y: 10, width: 10, height: 10 },
+      { x: 15, y: 10, width: 10, height: 10 },
+      "horizontal",
+      { arrowHead: "arrow" },
+      0
+    );
+
+    const line = parseLineEnd(connector.shape.svgPath);
+    expect(line).toBeDefined();
+
+    const bounds = connector.bounds;
+    const fromEdgeX = 20;
+    const fromEdgeY = 15;
+    const toEdgeX = 15;
+    const toEdgeY = 15;
+    const relFromX = ((fromEdgeX - bounds.x) / bounds.width) * 100;
+    const relFromY = ((fromEdgeY - bounds.y) / bounds.height) * 100;
+    const relToX = ((toEdgeX - bounds.x) / bounds.width) * 100;
+    const relToY = ((toEdgeY - bounds.y) / bounds.height) * 100;
+
+    const totalLength = Math.hypot(relToX - relFromX, relToY - relFromY);
+    const lineLength = Math.hypot(line!.toX - relFromX, line!.toY - relFromY);
+
+    expect(lineLength).toBeGreaterThan(0);
+    expect(lineLength).toBeLessThan(totalLength);
+  });
 });
