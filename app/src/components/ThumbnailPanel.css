@@ -25,6 +25,7 @@
 }
 
 .thumbnail-panel-add,
+.thumbnail-panel-duplicate,
 .thumbnail-panel-new,
 .thumbnail-panel-import {
   padding: 10px 16px;
@@ -39,6 +40,7 @@
 }
 
 .thumbnail-panel-add:hover,
+.thumbnail-panel-duplicate:hover,
 .thumbnail-panel-new:hover,
 .thumbnail-panel-import:hover {
   background: var(--panel-bg-secondary);

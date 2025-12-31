@@ -9,6 +9,7 @@ interface ThumbnailPanelProps {
   onSelect: (index: number) => void;
   onAdd: () => void;
   onDelete: (index: number) => void;
+  onDuplicate: () => void;
   onNewDeck: () => void;
   onImport: () => void;
   isImporting: boolean;
@@ -20,6 +21,7 @@ export function ThumbnailPanel({
   onSelect,
   onAdd,
   onDelete,
+  onDuplicate,
   onNewDeck,
   onImport,
   isImporting,
@@ -62,6 +64,9 @@ export function ThumbnailPanel({
       <div className="thumbnail-panel-actions">
         <button className="thumbnail-panel-add" onClick={onAdd}>
           + Add Slide
+        </button>
+        <button className="thumbnail-panel-duplicate" onClick={onDuplicate}>
+          Duplicate Slide
         </button>
         <button className="thumbnail-panel-new" onClick={onNewDeck}>
           New Deck

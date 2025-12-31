@@ -10,6 +10,7 @@ import { callModelStream, importPptx, type ImportProgress as ImportProgressType 
 import { MODEL_OPTIONS } from "./models";
 import { sanitizeHtml } from "./sanitize";
 import { clearPersistedState, loadPersistedState, savePersistedState } from "./storage";
+import { cloneSlideWithNewId } from "./slideUtils";
 import "./App.css";
 
 function createEmptySource(): SlideSource {
@@ -161,6 +162,17 @@ export default function App() {
 
   const handleFirstSlide = () => setCurrentSlideIndex(0);
   const handleLastSlide = () => setCurrentSlideIndex(slides.length - 1);
+  const handleDuplicateSlide = () => {
+    const slideToDuplicate = slides[currentSlideIndex];
+    if (!slideToDuplicate) return;
+    const duplicated = cloneSlideWithNewId(slideToDuplicate, crypto.randomUUID());
+    setSlides((prev) => {
+      const next = [...prev];
+      next.splice(currentSlideIndex + 1, 0, duplicated);
+      return next;
+    });
+    setCurrentSlideIndex(currentSlideIndex + 1);
+  };
   const handleNewDeck = () => {
     if (!window.confirm("Start a new deck? This clears the current slides and chat history.")) {
       return;
@@ -274,6 +286,7 @@ export default function App() {
         onSelect={handleGoToSlide}
         onAdd={handleAddSlide}
         onDelete={handleDeleteSlide}
+        onDuplicate={handleDuplicateSlide}
         onNewDeck={handleNewDeck}
         onImport={handleImportClick}
         isImporting={isImporting}
