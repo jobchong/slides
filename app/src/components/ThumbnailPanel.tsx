@@ -11,8 +11,10 @@ interface ThumbnailPanelProps {
   onDelete: (index: number) => void;
   onDuplicate: () => void;
   onNewDeck: () => void;
+  onExport: () => void;
   onImport: () => void;
   isImporting: boolean;
+  isExporting: boolean;
 }
 
 export function ThumbnailPanel({
@@ -23,8 +25,10 @@ export function ThumbnailPanel({
   onDelete,
   onDuplicate,
   onNewDeck,
+  onExport,
   onImport,
   isImporting,
+  isExporting,
 }: ThumbnailPanelProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const canDelete = slides.length > 1;
@@ -70,6 +74,13 @@ export function ThumbnailPanel({
         </button>
         <button className="thumbnail-panel-new" onClick={onNewDeck}>
           New Deck
+        </button>
+        <button
+          className="thumbnail-panel-export"
+          onClick={onExport}
+          disabled={isExporting}
+        >
+          Export PPTX
         </button>
         <button
           className="thumbnail-panel-import"

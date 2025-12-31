@@ -269,3 +269,19 @@ export async function importPptx(
     }
   }
 }
+
+export async function exportDeck(slides: Slide[]): Promise<Blob> {
+  const serverUrl = import.meta.env.VITE_SERVER_URL || "http://localhost:4000";
+  const response = await fetch(`${serverUrl}/api/export`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ slides }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `Export failed with ${response.status}`);
+  }
+
+  return response.blob();
+}

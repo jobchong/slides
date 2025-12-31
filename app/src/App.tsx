@@ -6,7 +6,7 @@ import { ThumbnailPanel } from "./components/ThumbnailPanel";
 import { SlideNavigation } from "./components/SlideNavigation";
 import { ImportProgress } from "./components/ImportProgress";
 import { useSlideNavigation } from "./hooks/useSlideNavigation";
-import { callModelStream, importPptx, type ImportProgress as ImportProgressType } from "./api";
+import { callModelStream, exportDeck, importPptx, type ImportProgress as ImportProgressType } from "./api";
 import { MODEL_OPTIONS } from "./models";
 import { sanitizeHtml } from "./sanitize";
 import { normalizeDeckState } from "./deckState";
@@ -46,6 +46,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState<ImportProgressType | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importAbortRef = useRef(false);
   const importControllerRef = useRef<AbortController | null>(null);
@@ -228,6 +229,28 @@ export default function App() {
     fileInputRef.current?.click();
   };
 
+  const handleExportClick = async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+    setError(null);
+    try {
+      const blob = await exportDeck(slides);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "slides.pptx";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Export failed:", err);
+      setError(err instanceof Error ? err.message : "Export failed");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const handleImportCancel = () => {
     importAbortRef.current = true;
     importControllerRef.current?.abort();
@@ -395,8 +418,10 @@ export default function App() {
         onDelete={handleDeleteSlide}
         onDuplicate={handleDuplicateSlide}
         onNewDeck={handleNewDeck}
+        onExport={handleExportClick}
         onImport={handleImportClick}
         isImporting={isImporting}
+        isExporting={isExporting}
       />
       <ImportProgress progress={importProgress} onCancel={handleImportCancel} />
       <div className="app-main">

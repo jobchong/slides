@@ -27,6 +27,7 @@
 .thumbnail-panel-add,
 .thumbnail-panel-duplicate,
 .thumbnail-panel-new,
+.thumbnail-panel-export,
 .thumbnail-panel-import {
   padding: 10px 16px;
   border: 1px dashed var(--panel-border-strong);
@@ -42,6 +43,7 @@
 .thumbnail-panel-add:hover,
 .thumbnail-panel-duplicate:hover,
 .thumbnail-panel-new:hover,
+.thumbnail-panel-export:hover,
 .thumbnail-panel-import:hover {
   background: var(--panel-bg-secondary);
   border-color: var(--accent);
@@ -49,6 +51,11 @@
 }
 
 .thumbnail-panel-import:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.thumbnail-panel-export:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
