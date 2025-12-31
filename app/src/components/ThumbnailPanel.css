@@ -25,6 +25,7 @@
 }
 
 .thumbnail-panel-add,
+.thumbnail-panel-new,
 .thumbnail-panel-import {
   padding: 10px 16px;
   border: 1px dashed var(--panel-border-strong);
@@ -38,6 +39,7 @@
 }
 
 .thumbnail-panel-add:hover,
+.thumbnail-panel-new:hover,
 .thumbnail-panel-import:hover {
   background: var(--panel-bg-secondary);
   border-color: var(--accent);

@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import type { Message, Slide, SlideSource } from "./types";
 import { SlideView } from "./components/SlideView";
 import { ChatInput } from "./components/ChatInput";
@@ -9,6 +9,7 @@ import { useSlideNavigation } from "./hooks/useSlideNavigation";
 import { callModelStream, importPptx, type ImportProgress as ImportProgressType } from "./api";
 import { MODEL_OPTIONS } from "./models";
 import { sanitizeHtml } from "./sanitize";
+import { clearPersistedState, loadPersistedState, savePersistedState } from "./storage";
 import "./App.css";
 
 function createEmptySource(): SlideSource {
@@ -20,9 +21,16 @@ function createSlide(): Slide {
 }
 
 export default function App() {
-  const [slides, setSlides] = useState<Slide[]>([createSlide()]);
-  const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const initialPersistedState = useMemo(() => loadPersistedState(), []);
+  const [slides, setSlides] = useState<Slide[]>(
+    () => initialPersistedState?.slides ?? [createSlide()]
+  );
+  const [currentSlideIndex, setCurrentSlideIndex] = useState(
+    () => initialPersistedState?.currentSlideIndex ?? 0
+  );
+  const [messages, setMessages] = useState<Message[]>(
+    () => initialPersistedState?.messages ?? []
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
@@ -32,7 +40,15 @@ export default function App() {
   const importControllerRef = useRef<AbortController | null>(null);
   const initialModel =
     import.meta.env.VITE_DEFAULT_MODEL || MODEL_OPTIONS[0].value;
-  const [model, setModel] = useState(initialModel);
+  const [model, setModel] = useState(() => {
+    if (
+      initialPersistedState?.model &&
+      MODEL_OPTIONS.some((option) => option.value === initialPersistedState.model)
+    ) {
+      return initialPersistedState.model;
+    }
+    return initialModel;
+  });
 
   const currentSlide = slides[currentSlideIndex];
 
@@ -145,6 +161,16 @@ export default function App() {
 
   const handleFirstSlide = () => setCurrentSlideIndex(0);
   const handleLastSlide = () => setCurrentSlideIndex(slides.length - 1);
+  const handleNewDeck = () => {
+    if (!window.confirm("Start a new deck? This clears the current slides and chat history.")) {
+      return;
+    }
+    clearPersistedState();
+    setSlides([createSlide()]);
+    setCurrentSlideIndex(0);
+    setMessages([]);
+    setError(null);
+  };
 
   useSlideNavigation({
     onPrev: handlePrevSlide,
@@ -224,6 +250,15 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    savePersistedState({
+      slides,
+      currentSlideIndex,
+      messages,
+      model,
+    });
+  }, [slides, currentSlideIndex, messages, model]);
+
   return (
     <div className="app">
       <input
@@ -239,6 +274,7 @@ export default function App() {
         onSelect={handleGoToSlide}
         onAdd={handleAddSlide}
         onDelete={handleDeleteSlide}
+        onNewDeck={handleNewDeck}
         onImport={handleImportClick}
         isImporting={isImporting}
       />
