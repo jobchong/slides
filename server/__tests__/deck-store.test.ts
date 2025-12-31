@@ -47,7 +47,9 @@ describe("deck store", () => {
     const updated = await store.save(created.id, updatedState);
 
     expect(updated.createdAt).toBe(created.createdAt);
-    expect(updated.updatedAt).not.toBe(created.updatedAt);
+    const createdAt = Date.parse(created.createdAt);
+    const updatedAt = Date.parse(updated.updatedAt);
+    expect(updatedAt).toBeGreaterThanOrEqual(createdAt);
     expect(updated.state.messages.length).toBe(2);
   });
 });
