@@ -9,6 +9,16 @@ import { useSlideNavigation } from "./hooks/useSlideNavigation";
 import { callModelStream, importPptx, type ImportProgress as ImportProgressType } from "./api";
 import { MODEL_OPTIONS } from "./models";
 import { sanitizeHtml } from "./sanitize";
+import { normalizeDeckState } from "./deckState";
+import {
+  clearStoredDeckId,
+  createDeck,
+  getStoredDeckId,
+  isServerDeckStorageEnabled,
+  loadDeck,
+  saveDeck,
+  setStoredDeckId,
+} from "./deckApi";
 import { clearPersistedState, loadPersistedState, savePersistedState } from "./storage";
 import { cloneSlideWithNewId } from "./slideUtils";
 import "./App.css";
@@ -50,6 +60,9 @@ export default function App() {
     }
     return initialModel;
   });
+  const [deckId, setDeckId] = useState<string | null>(() => getStoredDeckId());
+  const [isHydrated, setIsHydrated] = useState(false);
+  const isServerStorageEnabled = isServerDeckStorageEnabled();
 
   const currentSlide = slides[currentSlideIndex];
 
@@ -178,10 +191,28 @@ export default function App() {
       return;
     }
     clearPersistedState();
-    setSlides([createSlide()]);
+    clearStoredDeckId();
+    const freshSlide = createSlide();
+    setDeckId(null);
+    setSlides([freshSlide]);
     setCurrentSlideIndex(0);
     setMessages([]);
     setError(null);
+    if (isServerStorageEnabled) {
+      void createDeck({
+        slides: [freshSlide],
+        currentSlideIndex: 0,
+        messages: [],
+        model,
+      })
+        .then((created) => {
+          setDeckId(created.id);
+          setStoredDeckId(created.id);
+        })
+        .catch((err) => {
+          console.error("Failed to create new deck:", err);
+        });
+    }
   };
 
   useSlideNavigation({
@@ -270,6 +301,82 @@ export default function App() {
       model,
     });
   }, [slides, currentSlideIndex, messages, model]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const hydrateDeck = async () => {
+      if (!isServerStorageEnabled) {
+        setIsHydrated(true);
+        return;
+      }
+      if (isHydrated && !deckId) {
+        return;
+      }
+
+      try {
+        if (deckId) {
+          const remote = await loadDeck(deckId);
+          const normalized = normalizeDeckState(remote.state);
+          if (normalized && isActive) {
+            setSlides(normalized.slides);
+            setCurrentSlideIndex(normalized.currentSlideIndex);
+            setMessages(normalized.messages);
+            setModel(normalized.model || model);
+            setIsHydrated(true);
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("Failed to hydrate deck:", err);
+      } finally {
+        if (!isActive) return;
+      }
+
+      try {
+        const fallbackState = {
+          slides,
+          currentSlideIndex,
+          messages,
+          model,
+        };
+        const created = await createDeck(fallbackState);
+        if (!isActive) return;
+        setDeckId(created.id);
+        setStoredDeckId(created.id);
+      } catch (err) {
+        console.error("Failed to create fallback deck:", err);
+      } finally {
+        if (isActive) setIsHydrated(true);
+      }
+    };
+
+    void hydrateDeck();
+    return () => {
+      isActive = false;
+    };
+  }, [deckId, isServerStorageEnabled, isHydrated]);
+
+  useEffect(() => {
+    if (!isServerStorageEnabled || !isHydrated || !deckId) return;
+
+    const payload = {
+      slides,
+      currentSlideIndex,
+      messages,
+      model,
+    };
+
+    const timeout = window.setTimeout(() => {
+      saveDeck(deckId, payload).catch((err) => {
+        console.error("Failed to save deck:", err);
+      });
+    }, 800);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [slides, currentSlideIndex, messages, model, deckId, isHydrated, isServerStorageEnabled]);
 
   return (
     <div className="app">

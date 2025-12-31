@@ -95,6 +95,13 @@ export interface Slide {
   source?: SlideSource;       // Structured data for editing
 }
 
+export interface DeckState {
+  slides: Slide[];
+  currentSlideIndex: number;
+  messages: Message[];
+  model: string;
+}
+
 // Diagram Intent - semantic description for layout engine
 export interface DiagramNode {
   id: string;

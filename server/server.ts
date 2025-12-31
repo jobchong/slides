@@ -13,6 +13,8 @@ import { importPptx } from "./import";
 import { buildGatewayUrl, buildS3PublicUploadUrl, buildStoredImageUrl } from "./gateway";
 import type { ImportOptions } from "./import/types";
 import { logError, logInfo, logWarn, preview } from "./logger";
+import { createDefaultDeckStore } from "./deck-store";
+import type { DeckState, Message, Slide } from "../app/src/types";
 
 const port = Number(process.env.PORT || 4000);
 const uploadDir = process.env.UPLOAD_DIR || join(import.meta.dir, "uploads");
@@ -42,6 +44,7 @@ const s3SignedUrlExpires =
   Number(process.env.S3_SIGNED_URL_EXPIRES) || 60 * 60; // 1h default
 const devClientUrl = process.env.CLIENT_DEV_URL || "http://localhost:5173";
 const enableDevProxy = process.env.NODE_ENV !== "production";
+const maxDeckBytes = Number(process.env.MAX_DECK_BYTES) || 2 * 1024 * 1024;
 const corsAllowlist = new Set([
   "https://slidespell.com",
   "https://www.slidespell.com",
@@ -57,6 +60,8 @@ const s3Client = s3Bucket
     forcePathStyle: s3ForcePathStyle,
   })
   : null;
+
+const deckStore = createDefaultDeckStore();
 
 function fileExtension(file: File) {
   const fromName = extname(file.name || "").toLowerCase();
@@ -157,6 +162,19 @@ async function handleRequest(req: Request): Promise<Response> {
 
   const normalizedPath =
     url.pathname.length > 1 ? url.pathname.replace(/\/+$/, "") : url.pathname;
+
+  if (normalizedPath.startsWith("/api/decks/")) {
+    const deckId = normalizedPath.slice("/api/decks/".length);
+    if (!deckId) {
+      return applyCors(req, jsonResponse({ error: "Deck id is required." }, 400));
+    }
+    if (req.method === "GET") {
+      return applyCors(req, await handleGetDeck(deckId));
+    }
+    if (req.method === "PUT") {
+      return applyCors(req, await handleSaveDeck(req, deckId));
+    }
+  }
   const routeKey = `${req.method} ${normalizedPath}`;
   const route = routes[routeKey];
   if (route) {
@@ -183,6 +201,8 @@ const routes: Record<string, RouteHandler> = {
   "POST /api/voice-message/": handleVoiceMessage,
   "POST /api/import": handleImport,
   "POST /api/import/": handleImport,
+  "POST /api/decks": handleCreateDeck,
+  "POST /api/decks/": handleCreateDeck,
   "POST /upload": handleUpload,
   "POST /upload/": handleUpload,
 };
@@ -248,6 +268,73 @@ async function handleUpload(req: Request): Promise<Response> {
     },
     201
   );
+}
+
+function isValidMessage(value: unknown): value is Message {
+  if (!value || typeof value !== "object") return false;
+  const message = value as Message;
+  return (message.role === "user" || message.role === "assistant") && typeof message.content === "string";
+}
+
+function isValidSlide(value: unknown): value is Slide {
+  if (!value || typeof value !== "object") return false;
+  const slide = value as Slide;
+  return typeof slide.id === "string" && typeof slide.html === "string";
+}
+
+function parseDeckState(value: unknown): DeckState | null {
+  if (!value || typeof value !== "object") return null;
+  const state = value as DeckState;
+  if (!Array.isArray(state.slides) || state.slides.length === 0) return null;
+  if (!state.slides.every(isValidSlide)) return null;
+  if (!Number.isInteger(state.currentSlideIndex)) return null;
+  if (!Array.isArray(state.messages) || !state.messages.every(isValidMessage)) return null;
+  if (typeof state.model !== "string") return null;
+  return state;
+}
+
+async function readDeckStateFromRequest(req: Request): Promise<DeckState> {
+  const raw = await req.text();
+  const bytes = new TextEncoder().encode(raw);
+  if (bytes.length > maxDeckBytes) {
+    throw new Error("Deck payload exceeds size limit.");
+  }
+  const parsed = JSON.parse(raw) as { state?: DeckState };
+  const state = parseDeckState(parsed?.state);
+  if (!state) {
+    throw new Error("Invalid deck payload.");
+  }
+  return state;
+}
+
+async function handleCreateDeck(req: Request): Promise<Response> {
+  try {
+    const state = await readDeckStateFromRequest(req);
+    const record = await deckStore.create(state);
+    return jsonResponse(record, 201);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to create deck.";
+    return jsonResponse({ error: message }, 400);
+  }
+}
+
+async function handleGetDeck(deckId: string): Promise<Response> {
+  const deck = await deckStore.get(deckId);
+  if (!deck) {
+    return jsonResponse({ error: "Deck not found." }, 404);
+  }
+  return jsonResponse(deck);
+}
+
+async function handleSaveDeck(req: Request, deckId: string): Promise<Response> {
+  try {
+    const state = await readDeckStateFromRequest(req);
+    const record = await deckStore.save(deckId, state);
+    return jsonResponse(record);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to save deck.";
+    return jsonResponse({ error: message }, 400);
+  }
 }
 
 async function handleGenerateStream(req: Request): Promise<Response> {
