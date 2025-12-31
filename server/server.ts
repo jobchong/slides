@@ -14,6 +14,7 @@ import { buildGatewayUrl, buildS3PublicUploadUrl, buildStoredImageUrl } from "./
 import type { ImportOptions } from "./import/types";
 import { logError, logInfo, logWarn, preview } from "./logger";
 import { createDefaultDeckStore } from "./deck-store";
+import { exportDeckToPptx } from "./export";
 import type { DeckState, Message, Slide } from "../app/src/types";
 
 const port = Number(process.env.PORT || 4000);
@@ -201,6 +202,8 @@ const routes: Record<string, RouteHandler> = {
   "POST /api/voice-message/": handleVoiceMessage,
   "POST /api/import": handleImport,
   "POST /api/import/": handleImport,
+  "POST /api/export": handleExport,
+  "POST /api/export/": handleExport,
   "POST /api/decks": handleCreateDeck,
   "POST /api/decks/": handleCreateDeck,
   "POST /upload": handleUpload,
@@ -334,6 +337,33 @@ async function handleSaveDeck(req: Request, deckId: string): Promise<Response> {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to save deck.";
     return jsonResponse({ error: message }, 400);
+  }
+}
+
+async function handleExport(req: Request): Promise<Response> {
+  try {
+    const payload = await req.json();
+    if (!payload || !Array.isArray(payload.slides)) {
+      return jsonResponse({ error: "Slides payload is required." }, 400);
+    }
+
+    const slides = payload.slides.filter((slide: Slide) => slide && typeof slide.html === "string");
+    if (slides.length === 0) {
+      return jsonResponse({ error: "No slides to export." }, 400);
+    }
+
+    const baseUrl = new URL(req.url).origin;
+    const pptx = await exportDeckToPptx(slides, baseUrl);
+    return new Response(pptx, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "Content-Disposition": "attachment; filename=\"slides.pptx\"",
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to export slides.";
+    return jsonResponse({ error: message }, 500);
   }
 }
 
