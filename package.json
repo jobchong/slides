@@ -23,6 +23,7 @@
     "@aws-sdk/client-s3": "^3.671.0",
     "@aws-sdk/s3-request-presigner": "^3.671.0",
     "@google/genai": "^1.32.0",
+    "@upstash/redis": "^1.36.0",
     "dompurify": "^3.3.1",
     "image-size": "^2.0.2",
     "openai": "^4.78.1",

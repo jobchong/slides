@@ -21,6 +21,17 @@ bun run deploy
 
 That's it! Your app will be live at `https://your-app.fly.dev`
 
+### Optional: Redis for rate limiting (recommended for production)
+```bash
+# Create Upstash Redis on Fly.io
+fly redis create
+
+# Attach to your app (auto-sets UPSTASH_REDIS_REST_URL)
+fly redis attach
+```
+
+Without Redis, rate limits use in-memory storage (resets on deploy).
+
 ### Optional: S3 for uploads
 ```bash
 fly secrets set S3_BUCKET=your-bucket S3_REGION=us-east-1

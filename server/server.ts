@@ -15,6 +15,7 @@ import type { ImportOptions } from "./import/types";
 import { logError, logInfo, logWarn, preview } from "./logger";
 import { createDefaultDeckStore } from "./deck-store";
 import { exportDeckToPptx } from "./export";
+import { rateLimiter, isRateLimitedEndpoint } from "./rate-limit";
 import type { DeckState, Message, Slide } from "../app/src/types";
 
 const port = Number(process.env.PORT || 4000);
@@ -824,7 +825,28 @@ async function saveFile(
 const server = Bun.serve({
   port,
   idleTimeout: 255,
-  async fetch(req) {
+  async fetch(req, server) {
+    const url = new URL(req.url);
+    const clientIP = server.requestIP(req);
+
+    // Rate limit check for expensive endpoints
+    if (isRateLimitedEndpoint(req.method, url.pathname)) {
+      const result = await rateLimiter.check(req, clientIP);
+      if (!result.allowed) {
+        const response = jsonResponse(
+          {
+            error: result.error || "Rate limit exceeded",
+            remaining: result.remaining,
+            resetAt: result.resetAt,
+          },
+          429
+        );
+        return applyCors(req, response);
+      }
+      // Increment counter for allowed requests
+      await rateLimiter.increment(req, clientIP);
+    }
+
     return handleRequest(req);
   },
   error(error) {
