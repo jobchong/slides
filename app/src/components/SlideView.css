@@ -33,6 +33,16 @@
   animation: spin 0.8s linear infinite;
 }
 
+.slide-loading-text {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 14px;
+  color: #666;
+  font-weight: 500;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);

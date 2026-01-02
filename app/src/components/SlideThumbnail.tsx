@@ -1,4 +1,4 @@
-import type { MouseEvent } from "react";
+import type { MouseEvent, KeyboardEvent } from "react";
 import type { Slide } from "../types";
 import "./SlideThumbnail.css";
 
@@ -24,10 +24,22 @@ export function SlideThumbnail({
     onDelete();
   };
 
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onClick();
+    }
+  };
+
   return (
     <div
       className={`slide-thumbnail ${isSelected ? "slide-thumbnail--selected" : ""}`}
       onClick={onClick}
+      onKeyDown={handleKeyDown}
+      role="option"
+      tabIndex={0}
+      aria-selected={isSelected}
+      aria-label={`Slide ${index + 1}${isSelected ? ", selected" : ""}`}
     >
       <div className="slide-thumbnail-preview">
         {slide.html ? (

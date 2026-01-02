@@ -51,8 +51,13 @@ export function ThumbnailPanel({
   }, [currentIndex]);
 
   return (
-    <div className="thumbnail-panel">
-      <div className="thumbnail-panel-list" ref={listRef}>
+    <div className="thumbnail-panel" role="region" aria-label="Slide management">
+      <div
+        className="thumbnail-panel-list"
+        ref={listRef}
+        role="listbox"
+        aria-label="Slide thumbnails"
+      >
         {slides.map((slide, index) => (
           <SlideThumbnail
             key={slide.id}
@@ -65,29 +70,52 @@ export function ThumbnailPanel({
           />
         ))}
       </div>
-      <div className="thumbnail-panel-actions">
-        <button className="thumbnail-panel-add" onClick={onAdd}>
+      <div className="thumbnail-panel-actions" role="toolbar" aria-label="Slide actions">
+        <button
+          className="thumbnail-panel-add"
+          onClick={onAdd}
+          aria-label="Add new slide after current"
+        >
           + Add Slide
         </button>
-        <button className="thumbnail-panel-duplicate" onClick={onDuplicate}>
+        <button
+          className="thumbnail-panel-duplicate"
+          onClick={onDuplicate}
+          aria-label="Duplicate current slide"
+        >
           Duplicate Slide
         </button>
-        <button className="thumbnail-panel-new" onClick={onNewDeck}>
+        <button
+          className="thumbnail-panel-new"
+          onClick={onNewDeck}
+          aria-label="Create new empty deck"
+        >
           New Deck
         </button>
         <button
           className="thumbnail-panel-export"
           onClick={onExport}
           disabled={isExporting}
+          aria-label="Export deck as PowerPoint file"
+          aria-busy={isExporting}
         >
-          Export PPTX
+          {isExporting ? (
+            <>
+              <span className="button-spinner" aria-hidden="true" />
+              Exporting...
+            </>
+          ) : (
+            "Export PPTX"
+          )}
         </button>
         <button
           className="thumbnail-panel-import"
           onClick={onImport}
           disabled={isImporting}
+          aria-label="Import PowerPoint file"
+          aria-busy={isImporting}
         >
-          Import PPTX
+          {isImporting ? "Importing..." : "Import PPTX"}
         </button>
       </div>
     </div>

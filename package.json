@@ -9,7 +9,10 @@
     "dev:client": "bunx vite dev --config app/vite.config.ts",
     "build:client": "bunx vite build --config app/vite.config.ts",
     "preview": "bunx vite preview --config app/vite.config.ts",
-    "test": "SLIDEAI_SILENCE_LOGS=true bun test",
+    "test": "SLIDEAI_SILENCE_LOGS=true bun test app server",
+    "test:e2e": "bunx playwright test",
+    "test:e2e:ui": "bunx playwright test --ui",
+    "test:e2e:headed": "bunx playwright test --headed",
     "typecheck:client": "bunx tsc -p app/tsconfig.json --noEmit",
     "typecheck:server": "bunx tsc -p server/tsconfig.json --noEmit"
   },
@@ -28,6 +31,7 @@
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "^20.0.11",
+    "@playwright/test": "^1.57.0",
     "@testing-library/react": "^16.3.1",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
