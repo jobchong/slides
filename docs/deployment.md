@@ -1,6 +1,36 @@
-# Deployment Plan
+# Deployment
 
-Minimal deployment using Cloudflare Pages (frontend) + AWS App Runner (backend).
+## Quick Deploy (Fly.io) - Recommended
+
+One-button deployment to Fly.io:
+
+```bash
+# 1. Install Fly CLI (one-time)
+curl -L https://fly.io/install.sh | sh
+fly auth login
+
+# 2. Create app (first time only)
+fly launch --no-deploy
+
+# 3. Set secrets
+fly secrets set ANTHROPIC_API_KEY=sk-ant-... GROQ_API_KEY=gsk_...
+
+# 4. Deploy!
+bun run deploy
+```
+
+That's it! Your app will be live at `https://your-app.fly.dev`
+
+### Optional: S3 for uploads
+```bash
+fly secrets set S3_BUCKET=your-bucket S3_REGION=us-east-1
+```
+
+---
+
+## Alternative: Cloudflare Pages + AWS App Runner
+
+Split deployment using Cloudflare Pages (frontend) + AWS App Runner (backend).
 
 ## Prerequisites
 

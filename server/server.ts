@@ -44,7 +44,8 @@ const s3ForcePathStyle = process.env.S3_FORCE_PATH_STYLE === "true";
 const s3SignedUrlExpires =
   Number(process.env.S3_SIGNED_URL_EXPIRES) || 60 * 60; // 1h default
 const devClientUrl = process.env.CLIENT_DEV_URL || "http://localhost:5173";
-const enableDevProxy = process.env.NODE_ENV !== "production";
+const isProduction = process.env.NODE_ENV === "production";
+const staticDir = join(import.meta.dir, "../app/dist");
 const maxDeckBytes = Number(process.env.MAX_DECK_BYTES) || 2 * 1024 * 1024;
 const corsAllowlist = new Set([
   "https://slidespell.com",
@@ -735,7 +736,54 @@ async function handleImageGet(url: URL): Promise<Response> {
 }
 
 function fallbackRoute(url: URL, method: string): RouteHandler | null {
-  if (method !== "GET" || !enableDevProxy) return null;
+  if (method !== "GET") return null;
+
+  // Production: serve static files from app/dist
+  if (isProduction) {
+    return async () => {
+      let filePath = url.pathname === "/" ? "/index.html" : url.pathname;
+      const fullPath = normalize(join(staticDir, filePath));
+
+      // Security: prevent path traversal
+      if (!fullPath.startsWith(normalize(staticDir + "/"))) {
+        return jsonResponse({ error: "Invalid path" }, 400);
+      }
+
+      const file = Bun.file(fullPath);
+      if (await file.exists()) {
+        const mimeTypes: Record<string, string> = {
+          ".html": "text/html",
+          ".js": "application/javascript",
+          ".css": "text/css",
+          ".json": "application/json",
+          ".png": "image/png",
+          ".jpg": "image/jpeg",
+          ".svg": "image/svg+xml",
+          ".ico": "image/x-icon",
+          ".woff": "font/woff",
+          ".woff2": "font/woff2",
+        };
+        const ext = extname(filePath);
+        const contentType = mimeTypes[ext] || "application/octet-stream";
+        return new Response(file, {
+          headers: { "Content-Type": contentType },
+        });
+      }
+
+      // SPA fallback: serve index.html for unmatched routes
+      const indexPath = join(staticDir, "index.html");
+      const indexFile = Bun.file(indexPath);
+      if (await indexFile.exists()) {
+        return new Response(indexFile, {
+          headers: { "Content-Type": "text/html" },
+        });
+      }
+
+      return jsonResponse({ error: "Not found" }, 404);
+    };
+  }
+
+  // Development: proxy to Vite dev server
   return async () => {
     const target = `${devClientUrl}${url.pathname}${url.search}`;
     const proxied = await fetch(target);

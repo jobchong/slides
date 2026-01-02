@@ -91,23 +91,20 @@ Notes:
 - UI stays in the chat input area with a recording indicator and timer.
 - Flow: record → upload → transcribe → generate slide → return HTML.
 
-## Deployment (Cloudflare Pages + AWS App Runner)
-Minimal deployment uses Cloudflare Pages for the frontend and AWS App Runner for the backend.
+## Deployment
 
-Backend (App Runner):
-- Use the repo `Dockerfile` and expose port `4000`.
-- Set env vars: `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, plus any storage vars (`S3_BUCKET`, etc.).
+### Quick Deploy (Fly.io)
+```bash
+# Install Fly CLI, then:
+fly launch --no-deploy
+fly secrets set ANTHROPIC_API_KEY=... GROQ_API_KEY=...
+bun run deploy
+```
 
-Frontend (Cloudflare Pages):
-- Build command: `bun run build:client`
-- Output: `app/dist`
-- Set `VITE_MODEL_SERVICE_URL` to the App Runner URL.
+See `docs/deployment.md` for detailed instructions.
 
-Server CORS:
-- Add your production domain to `server/server.ts` allowed origins.
-
-Optional S3:
-- Set `S3_BUCKET` and `S3_PUBLIC_BASE_URL` for direct CDN/S3 URLs.
+### Alternative: Cloudflare + AWS
+Split deployment using Cloudflare Pages (frontend) + AWS App Runner (backend). See `docs/deployment.md`.
 
 ## Testing
 - `bun test` runs unit tests (import parsing/rendering).
