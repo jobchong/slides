@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, unlink } from "node:fs/promises";
 import { join, extname, normalize } from "node:path";
 import {
   PutObjectCommand,
@@ -298,6 +298,10 @@ function parseDeckState(value: unknown): DeckState | null {
   return state;
 }
 
+function isValidDeckId(deckId: string): boolean {
+  return /^[a-zA-Z0-9_-]+$/.test(deckId);
+}
+
 async function readDeckStateFromRequest(req: Request): Promise<DeckState> {
   const raw = await req.text();
   const bytes = new TextEncoder().encode(raw);
@@ -324,6 +328,9 @@ async function handleCreateDeck(req: Request): Promise<Response> {
 }
 
 async function handleGetDeck(deckId: string): Promise<Response> {
+  if (!isValidDeckId(deckId)) {
+    return jsonResponse({ error: "Invalid deck id." }, 400);
+  }
   const deck = await deckStore.get(deckId);
   if (!deck) {
     return jsonResponse({ error: "Deck not found." }, 404);
@@ -332,6 +339,9 @@ async function handleGetDeck(deckId: string): Promise<Response> {
 }
 
 async function handleSaveDeck(req: Request, deckId: string): Promise<Response> {
+  if (!isValidDeckId(deckId)) {
+    return jsonResponse({ error: "Invalid deck id." }, 400);
+  }
   try {
     const state = await readDeckStateFromRequest(req);
     const record = await deckStore.save(deckId, state);
@@ -375,11 +385,11 @@ async function handleGenerateStream(req: Request): Promise<Response> {
     const body = await req.json();
     const { messages, currentHtml = "", model } = body || {};
 
-    if (!Array.isArray(messages)) {
-      logWarn("Generate stream request rejected: messages must be an array.", {
+    if (!Array.isArray(messages) || !messages.every(isValidMessage)) {
+      logWarn("Generate stream request rejected: messages invalid.", {
         receivedType: typeof messages,
       });
-      return jsonResponse({ error: "messages must be an array" }, 400);
+      return jsonResponse({ error: "messages must be an array of role/content objects" }, 400);
     }
 
     const lastMessage = messages[messages.length - 1]?.content || "";
@@ -534,6 +544,13 @@ async function handleVoiceMessage(req: Request): Promise<Response> {
       return jsonResponse({ error: "Invalid JSON in messages field." }, 400);
     }
 
+    if (!Array.isArray(messages) || !messages.every(isValidMessage)) {
+      logWarn("Voice message rejected: messages field invalid.", {
+        messagesType: typeof messages,
+      });
+      return jsonResponse({ error: "Invalid messages field." }, 400);
+    }
+
     logInfo("Voice transcription requested", {
       messagesCount: Array.isArray(messages) ? messages.length : 0,
       lastMessagePreview: Array.isArray(messages)
@@ -663,8 +680,9 @@ async function handleImport(req: Request): Promise<Response> {
           // Clean up temp PPTX file
           if (tempPptxPath) {
             try {
-              await Bun.file(tempPptxPath).exists() &&
-                (await import("node:fs/promises")).unlink(tempPptxPath);
+              if (await Bun.file(tempPptxPath).exists()) {
+                await unlink(tempPptxPath);
+              }
             } catch {
               // Ignore cleanup errors
             }

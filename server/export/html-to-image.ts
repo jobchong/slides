@@ -43,10 +43,22 @@ export async function renderHtmlToPng(
   const background = options?.background;
   const browser = await chromium.launch();
   try {
-    const page = await browser.newPage({ viewport: { width, height } });
+    const context = await browser.newContext({
+      viewport: { width, height },
+      javaScriptEnabled: false,
+    });
+    const page = await context.newPage();
+    await page.route("**/*", (route) => {
+      const url = route.request().url();
+      if (url.startsWith("data:") || url === "about:blank") {
+        return route.continue();
+      }
+      return route.abort();
+    });
     const content = wrapHtml(html, width, height, background);
-    await page.setContent(content, { waitUntil: "load" });
+    await page.setContent(content, { waitUntil: "domcontentloaded" });
     const buffer = await page.screenshot({ type: "png" });
+    await context.close();
     return buffer as Buffer;
   } finally {
     await browser.close();
