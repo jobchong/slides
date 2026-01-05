@@ -125,7 +125,7 @@ export function convertToEditable(
     ) {
       textElement.shape = {
         kind: mapShapeKind(element.shape.shapeType),
-        fill: element.shape.fill,
+        fill: element.shape.fill || "none",
         stroke: element.shape.stroke,
         strokeWidth: element.shape.strokeWidth,
         svgPath: element.shape.svgPath,

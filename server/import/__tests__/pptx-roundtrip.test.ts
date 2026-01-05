@@ -11,6 +11,8 @@ import { renderSlideHtml } from "../render";
 import { exportDeckToPptx } from "../../export";
 import type { Slide } from "../../../app/src/types";
 
+type SlideSource = NonNullable<Slide["source"]>;
+
 const repoRoot = join(import.meta.dir, "..", "..", "..");
 const pptxDir = join(repoRoot, "ppts");
 
@@ -123,7 +125,7 @@ function normalizeBounds(bounds: { x: number; y: number; width: number; height: 
   };
 }
 
-function normalizeTextElement(element: Slide["source"]["elements"][number]) {
+function normalizeTextElement(element: SlideSource["elements"][number]) {
   if (!element.text) return null;
   return {
     content: element.text.content,
@@ -138,7 +140,7 @@ function normalizeTextElement(element: Slide["source"]["elements"][number]) {
   };
 }
 
-function normalizeNonTextElement(element: Slide["source"]["elements"][number]) {
+function normalizeNonTextElement(element: SlideSource["elements"][number]) {
   if (element.type === "text") return null;
   return normalizeBounds(element.bounds);
 }

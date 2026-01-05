@@ -40,7 +40,7 @@ describe("deck store", () => {
     expect(loaded).not.toBeNull();
     expect(loaded?.createdAt).toBe(created.createdAt);
 
-    const updatedState = {
+    const updatedState: DeckState = {
       ...sampleState,
       messages: [...sampleState.messages, { role: "assistant", content: "Done." }],
     };

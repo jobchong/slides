@@ -534,7 +534,7 @@ async function handleVoiceMessage(req: Request): Promise<Response> {
       return jsonResponse({ error: "Missing or invalid messages field." }, 400);
     }
 
-    let messages;
+    let messages: Message[] = [];
     try {
       messages = JSON.parse(messagesJson);
     } catch (e) {
@@ -570,7 +570,7 @@ async function handleVoiceMessage(req: Request): Promise<Response> {
     const selectedModel = selectModel(transcription, userModel || undefined);
 
     // Add transcription as a user message
-    const updatedMessages = [
+    const updatedMessages: Message[] = [
       ...messages,
       { role: "user", content: transcription },
     ];

@@ -1,4 +1,4 @@
-import pptxgen from "pptxgenjs";
+import PptxGenJS from "pptxgenjs";
 import { imageSize } from "image-size";
 
 import type { Slide, SlideSource } from "../../app/src/types";
@@ -142,8 +142,9 @@ async function addEditableElement(
         ? {
             color: normalizeColor(element.shape.stroke),
             width: element.shape.strokeWidth,
-            dash: element.shape.strokeDasharray ? "dash" : undefined,
-            cap: element.shape.lineCap === "round" ? "round" : element.shape.lineCap === "square" ? "square" : undefined,
+            dashType: element.shape.strokeDasharray ? "dash" : undefined,
+            beginArrowType: element.shape.lineHead === "oval" ? "oval" : element.shape.lineHead === "none" ? "none" : undefined,
+            endArrowType: element.shape.lineTail === "oval" ? "oval" : element.shape.lineTail === "none" ? "none" : undefined,
           }
         : undefined,
       rotate: element.rotation ? element.rotation : undefined,
@@ -178,7 +179,7 @@ async function renderHtmlSlide(html: string): Promise<string> {
 }
 
 export async function exportDeckToPptx(slides: Slide[], baseUrl: string): Promise<Uint8Array> {
-  const pptx = new pptxgen();
+  const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_WIDE";
 
   for (const slide of slides) {

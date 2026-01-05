@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile, copyFile, readdir, unlink, rmdir } from "no
 import { join, normalize, basename, extname } from "node:path";
 import { randomUUID } from "node:crypto";
 
-import type { Background, ExtractedElement, SlideRelationships } from "./types";
+import type { Background, ExtractedElement, SlideRelationships, SlideSource } from "./types";
 import { parsePresentation, parseRelationships, parseSlide, resetElementIdCounter } from "./parser";
 import { parseTheme, getDefaultTheme } from "./theme";
 import { convertBackground, convertToEditable } from "./converter";
@@ -286,10 +286,10 @@ async function main(): Promise<void> {
       if (!pdfPromise) {
         const pdfOverride = join(tmpRoot, `${pptxBase}.pdf`);
         pdfPromise = (await Bun.file(pdfOverride).exists())
-          ? pdfOverride
+          ? Promise.resolve(pdfOverride)
           : convertPptxToPdf(pptxPath, workDir);
       }
-      return pdfPromise;
+      return pdfPromise ?? Promise.reject(new Error("Failed to resolve PDF path."));
     };
 
     const saveImage = async (
@@ -386,7 +386,7 @@ async function main(): Promise<void> {
           })
         )
         .filter((el): el is NonNullable<typeof el> => el !== null);
-      let source = {
+      let source: SlideSource = {
         background: convertBackground(mergedBackground),
         elements,
         import: { slideIndex: i },
