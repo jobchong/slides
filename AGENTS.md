@@ -9,7 +9,7 @@ Quick orientation for agents working in this repo:
 - **Scripts**: `bun run dev`, `bun run dev:server`, `bun run dev:client`, `bun run typecheck:client`, `bun run typecheck:server`.
 - **Notes**: PPTX import concurrency is fixed at `8` server-side; set `S3_PUBLIC_BASE_URL` to emit direct S3/CDN image URLs in generated HTML when using S3 storage.
 
-## Autonomy loop expectations
+## Work expectations
 
 - **Mode**: Work mostly autonomously. Only ask when a shell command or URL needs permission; do not spend time on workarounds.
 - **Loop**: Identify a concrete product improvement, implement it, review output, add tests, commit, then immediately move to the next improvement.

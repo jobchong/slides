@@ -52,3 +52,11 @@ Primary docs now live in `docs/guide.md`. This file stays focused on coding conv
 - `app/design.md` - architecture deep dive
 - `docs/slides.md` - multi-slide feature spec
 - `docs/speech.md` - voice input design
+
+## Work expectations
+
+- **Mode**: Work mostly autonomously. Only ask when a shell command or URL needs permission; do not spend time on workarounds.
+- **Loop**: Identify a concrete product improvement, implement it, review output, add tests, commit, then immediately move to the next improvement.
+- **Validation**: Prefer inspecting generated HTML/JSON output and diffs; you cannot open a browser here.
+- **Commits**: Commit after each improvement loop so changes are easy to revert. Use concise conventional commit messages (e.g., `fix: ...`, `feat: ...`).
+- **Libraries**: It's OK to introduce external libraries if they clearly improve readability or maintainability; prefer to do so when it meaningfully simplifies custom code.
