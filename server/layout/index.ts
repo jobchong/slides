@@ -111,14 +111,6 @@ function normalizeLayout(layout: DiagramLayout | undefined, nodeCount: number): 
 }
 
 /**
- * Grid layout: arrange nodes in a matrix with specified columns.
- * TODO: Full implementation
- */
-/**
- * Hierarchy layout: tree structure.
- * TODO: Full implementation with proper tree layout algorithm
- */
-/**
  * Convert optional background to SlideBackground.
  */
 function convertBackground(bg?: SlideBackground): SlideBackground {
