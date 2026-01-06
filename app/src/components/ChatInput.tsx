@@ -207,10 +207,9 @@ export function ChatInput({
 
       // Reset to idle after successful processing
       setRecordingState("idle");
-    } catch (error) {
-      console.error("Voice message error:", error);
+    } catch (err) {
       setRecordingState("error");
-      setAudioError(error instanceof Error ? error.message : "Failed to process voice message");
+      setAudioError(err instanceof Error ? err.message : "Failed to process voice message");
     }
   };
 

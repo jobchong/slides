@@ -57,7 +57,6 @@ export function useImportExport({
       anchor.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      console.error("Export failed:", err);
       setImportExportError(err instanceof Error ? err.message : "Export failed");
     } finally {
       setIsExporting(false);
@@ -119,7 +118,6 @@ export function useImportExport({
         }
       } catch (err) {
         if (!importAbortRef.current) {
-          console.error("Import failed:", err);
           setImportExportError(err instanceof Error ? err.message : "Import failed");
         }
       } finally {

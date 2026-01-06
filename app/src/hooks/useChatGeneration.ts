@@ -88,7 +88,6 @@ export function useChatGeneration({
           setMessages([...newMessages, { role: "assistant", content: "Done." }]);
         }
       } catch (err) {
-        console.error("Error calling model:", err);
         setError(err instanceof Error ? err.message : "Unknown error");
       } finally {
         setIsLoading(false);
