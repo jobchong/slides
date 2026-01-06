@@ -11,7 +11,7 @@ describe("callModelStream", () => {
       `data: [DONE]\r\n\r\n`,
     ];
 
-    globalThis.fetch = async () => {
+    globalThis.fetch = (async () => {
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
           for (const chunk of chunks) {
@@ -21,7 +21,7 @@ describe("callModelStream", () => {
         },
       });
       return new Response(stream, { status: 200 });
-    };
+    }) as unknown as typeof fetch;
 
     try {
       let latest = "";
@@ -41,7 +41,7 @@ describe("callModelStream", () => {
     const controller = new AbortController();
     let receivedSignal: AbortSignal | null = null;
 
-    globalThis.fetch = async (_url, options) => {
+    globalThis.fetch = (async (_url: string | URL | Request, options?: RequestInit) => {
       receivedSignal = (options?.signal as AbortSignal) || null;
       const stream = new ReadableStream<Uint8Array>({
         start(controllerStream) {
@@ -49,14 +49,14 @@ describe("callModelStream", () => {
         },
       });
       return new Response(stream, { status: 200 });
-    };
+    }) as unknown as typeof fetch;
 
     try {
       const file = new File([new Uint8Array([1, 2, 3])], "test.pptx", {
         type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
       });
       await importPptx(file, () => {}, () => {}, { signal: controller.signal });
-      expect(receivedSignal).toBe(controller.signal);
+      expect(receivedSignal === controller.signal).toBe(true);
     } finally {
       globalThis.fetch = originalFetch;
     }

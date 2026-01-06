@@ -88,7 +88,7 @@ describe("useAudioRecorder", () => {
     const result = await act(async () => stopRecording());
 
     expect(stopCalled).toBe(true);
-    expect(lastRecorder?.state).toBe("inactive");
+    expect((lastRecorder as MockMediaRecorder | null)?.state).toBe("inactive");
     expect(result).toBeInstanceOf(Blob);
 
     Object.defineProperty(globalThis, "MediaRecorder", {
