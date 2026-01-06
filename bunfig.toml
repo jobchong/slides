@@ -1,0 +1,5 @@
+# Bun configuration
+# E2E tests use Playwright: `bun run test:e2e`
+
+[test]
+root = "."
