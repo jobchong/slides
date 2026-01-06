@@ -8,6 +8,18 @@ export interface DeckResponse {
 }
 
 const DECK_ID_KEY = "slideai:deck:id";
+const REQUEST_TIMEOUT = 30_000;
+
+/** Parse error response, handling both JSON and plain text */
+async function parseErrorResponse(response: Response): Promise<string> {
+  const text = await response.text();
+  try {
+    const json = JSON.parse(text);
+    return json.error || `Request failed with ${response.status}`;
+  } catch {
+    return text || `Request failed with ${response.status}`;
+  }
+}
 
 export function isServerDeckStorageEnabled(): boolean {
   const mode = import.meta.env.VITE_DECK_STORAGE;
@@ -35,43 +47,85 @@ function getServerUrl(): string {
 }
 
 export async function createDeck(state: DeckState): Promise<DeckResponse> {
-  const response = await fetch(`${getServerUrl()}/api/decks`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ state }),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+
+  let response: Response;
+  try {
+    response = await fetch(`${getServerUrl()}/api/decks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ state }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("Create deck request timed out");
+    }
+    throw err;
+  }
+  clearTimeout(timeoutId);
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || `Create deck failed with ${response.status}`);
+    const errorMessage = await parseErrorResponse(response);
+    throw new Error(errorMessage);
   }
 
   return response.json();
 }
 
 export async function loadDeck(id: string): Promise<DeckResponse> {
-  const response = await fetch(`${getServerUrl()}/api/decks/${id}`, {
-    method: "GET",
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+
+  let response: Response;
+  try {
+    response = await fetch(`${getServerUrl()}/api/decks/${id}`, {
+      method: "GET",
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("Load deck request timed out");
+    }
+    throw err;
+  }
+  clearTimeout(timeoutId);
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || `Load deck failed with ${response.status}`);
+    const errorMessage = await parseErrorResponse(response);
+    throw new Error(errorMessage);
   }
 
   return response.json();
 }
 
 export async function saveDeck(id: string, state: DeckState): Promise<DeckResponse> {
-  const response = await fetch(`${getServerUrl()}/api/decks/${id}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ state }),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+
+  let response: Response;
+  try {
+    response = await fetch(`${getServerUrl()}/api/decks/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ state }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("Save deck request timed out");
+    }
+    throw err;
+  }
+  clearTimeout(timeoutId);
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || `Save deck failed with ${response.status}`);
+    const errorMessage = await parseErrorResponse(response);
+    throw new Error(errorMessage);
   }
 
   return response.json();

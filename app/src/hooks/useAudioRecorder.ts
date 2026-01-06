@@ -93,8 +93,7 @@ export function useAudioRecorder(): UseAudioRecorderResult {
         }
       };
 
-      mediaRecorder.onerror = (event) => {
-        console.error("MediaRecorder error:", event);
+      mediaRecorder.onerror = () => {
         setError("Recording failed. Please try again.");
         setRecordingState("error");
       };
@@ -114,7 +113,6 @@ export function useAudioRecorder(): UseAudioRecorderResult {
         }
       }, 1000);
     } catch (err) {
-      console.error("Failed to start recording:", err);
       if (err instanceof DOMException && err.name === "NotAllowedError") {
         setError("Microphone permission denied. Please allow access.");
       } else {

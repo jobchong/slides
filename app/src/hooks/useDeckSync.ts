@@ -80,8 +80,8 @@ export function useDeckSync({
             return;
           }
         }
-      } catch (err) {
-        console.error("Failed to hydrate deck:", err);
+      } catch {
+        // Deck doesn't exist or failed to load - will create a new one below
       } finally {
         if (!isActive) return;
       }
@@ -97,8 +97,8 @@ export function useDeckSync({
         if (!isActive) return;
         setDeckId(created.id);
         setStoredDeckId(created.id);
-      } catch (err) {
-        console.error("Failed to create fallback deck:", err);
+      } catch {
+        // Failed to create deck - localStorage fallback will be used
       } finally {
         if (isActive) setIsHydrated(true);
       }
@@ -122,8 +122,9 @@ export function useDeckSync({
     };
 
     const timeout = window.setTimeout(() => {
-      saveDeck(deckId, payload).catch((err) => {
-        console.error("Failed to save deck:", err);
+      saveDeck(deckId, payload).catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : "Failed to save deck";
+        setError(`Auto-save failed: ${message}`);
       });
     }, 800);
 
@@ -155,8 +156,9 @@ export function useDeckSync({
           setDeckId(created.id);
           setStoredDeckId(created.id);
         })
-        .catch((err) => {
-          console.error("Failed to create new deck:", err);
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : "Failed to create deck";
+          setError(`New deck creation failed: ${message}`);
         });
     }
   }, [isServerStorageEnabled, model, setSlides, setCurrentSlideIndex, setMessages, setError]);

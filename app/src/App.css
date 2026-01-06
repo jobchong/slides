@@ -27,7 +27,7 @@
 .app-chat {
   position: fixed;
   bottom: 24px;
-  left: 180px;
+  left: var(--sidebar-width);
   right: 0;
   display: flex;
   justify-content: center;

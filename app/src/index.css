@@ -10,6 +10,13 @@
   --accent: #6ea16a;
   --accent-strong: #5c8658;
   --accent-active: #466942;
+  --sidebar-width: 180px;
+}
+
+@media (max-width: 768px) {
+  :root {
+    --sidebar-width: 0px;
+  }
 }
 
 * {

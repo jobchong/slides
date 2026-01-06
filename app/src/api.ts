@@ -5,6 +5,20 @@ export interface StreamResult {
   clarification: string | null;
 }
 
+/** Timeout for API requests in milliseconds */
+const REQUEST_TIMEOUT = 60_000;
+
+/** Parse error response, handling both JSON and plain text */
+async function parseErrorResponse(response: Response): Promise<string> {
+  const text = await response.text();
+  try {
+    const json = JSON.parse(text);
+    return json.error || `Request failed with ${response.status}`;
+  } catch {
+    return text || `Request failed with ${response.status}`;
+  }
+}
+
 function createClarifyExtractor() {
   const OPEN = "<clarify>";
   const CLOSE = "</clarify>";
@@ -81,15 +95,29 @@ export async function callModelStream(
   onChunk: (html: string) => void
 ): Promise<StreamResult> {
   const serverUrl = import.meta.env.VITE_SERVER_URL || "http://localhost:4000";
-  const response = await fetch(`${serverUrl}/api/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages, currentHtml, model }),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+
+  let response: Response;
+  try {
+    response = await fetch(`${serverUrl}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages, currentHtml, model }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("Request timed out");
+    }
+    throw err;
+  }
+  clearTimeout(timeoutId);
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || `Generate failed with ${response.status}`);
+    const errorMessage = await parseErrorResponse(response);
+    throw new Error(errorMessage);
   }
 
   const reader = response.body?.getReader();
@@ -160,22 +188,34 @@ export async function sendVoiceMessage(
   // Determine file extension based on MIME type
   const filename = resolveAudioFilename(audioBlob.type);
 
-  console.log(`Sending audio: ${audioBlob.type} (${audioBlob.size} bytes) as ${filename}`);
-
   const formData = new FormData();
   formData.append("audio", audioBlob, filename);
   formData.append("messages", JSON.stringify(messages));
   formData.append("currentHtml", currentHtml);
   formData.append("model", model);
 
-  const response = await fetch(`${serverUrl}/api/voice-message`, {
-    method: "POST",
-    body: formData,
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+
+  let response: Response;
+  try {
+    response = await fetch(`${serverUrl}/api/voice-message`, {
+      method: "POST",
+      body: formData,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("Voice request timed out");
+    }
+    throw err;
+  }
+  clearTimeout(timeoutId);
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || "Failed to process voice message");
+    const errorMessage = await parseErrorResponse(response);
+    throw new Error(errorMessage);
   }
 
   const data = await response.json();
@@ -222,8 +262,8 @@ export async function importPptx(
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || `Import failed with ${response.status}`);
+    const errorMessage = await parseErrorResponse(response);
+    throw new Error(errorMessage);
   }
 
   const reader = response.body?.getReader();
@@ -272,15 +312,29 @@ export async function importPptx(
 
 export async function exportDeck(slides: Slide[]): Promise<Blob> {
   const serverUrl = import.meta.env.VITE_SERVER_URL || "http://localhost:4000";
-  const response = await fetch(`${serverUrl}/api/export`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ slides }),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+
+  let response: Response;
+  try {
+    response = await fetch(`${serverUrl}/api/export`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slides }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("Export request timed out");
+    }
+    throw err;
+  }
+  clearTimeout(timeoutId);
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || `Export failed with ${response.status}`);
+    const errorMessage = await parseErrorResponse(response);
+    throw new Error(errorMessage);
   }
 
   return response.blob();
