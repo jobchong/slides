@@ -6,6 +6,7 @@ import {
   GetObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { getAllowedAudioTypes, isAllowedAudioType } from "./audio";
 import { transcribeAudio } from "./groq";
 import { generateSlide, generateSlideStream, getDefaultModel, selectModel } from "./llm";
 import { importPptx } from "./import";
@@ -29,15 +30,6 @@ const allowedTypes = new Set([
   "image/png",
   "image/webp",
   "image/gif",
-]);
-const allowedAudioTypes = new Set([
-  "audio/webm",
-  "audio/webm;codecs=opus",
-  "video/webm", // MediaRecorder sometimes uses video/webm for audio-only
-  "audio/mp4",
-  "audio/mpeg",
-  "audio/wav",
-  "audio/ogg",
 ]);
 const s3Bucket = process.env.S3_BUCKET;
 const s3Region = process.env.S3_REGION || "us-east-1";
@@ -514,12 +506,14 @@ async function handleVoiceMessage(req: Request): Promise<Response> {
       name: audioFile.name,
     });
 
-    if (!allowedAudioTypes.has(audioFile.type)) {
+    const normalizedAudioType = audioFile.type.toLowerCase();
+    if (!isAllowedAudioType(audioFile.type)) {
+      const allowedAudioTypes = getAllowedAudioTypes();
       logWarn("Voice message rejected due to unsupported audio type.", {
-        type: audioFile.type,
-        allowedTypes: Array.from(allowedAudioTypes),
+        type: normalizedAudioType,
+        allowedTypes: allowedAudioTypes,
       });
-      return jsonResponse({ error: `Unsupported audio type ${audioFile.type}. Allowed types: ${Array.from(allowedAudioTypes).join(", ")}` }, 400);
+      return jsonResponse({ error: `Unsupported audio type ${normalizedAudioType}. Allowed types: ${allowedAudioTypes.join(", ")}` }, 400);
     }
 
     if (audioFile.size > maxAudioBytes) {
