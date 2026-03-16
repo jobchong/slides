@@ -1,119 +1,101 @@
 # Deployment
 
-## Quick Deploy (Fly.io) - Recommended
+## Recommended: Fly.io Monolith
 
-One-button deployment to Fly.io:
+The repo ships as a single Bun service. The production container:
+- builds the Vite frontend into `app/dist`
+- runs the Bun server on port `4000`
+- serves the built frontend and all API routes from the same process
+- installs `unzip` so PPTX import works in production
 
-```bash
-# 1. Install Fly CLI (one-time)
-curl -L https://fly.io/install.sh | sh
+### First Deploy
+
+```sh
+# One-time setup
 fly auth login
-
-# 2. Create app (first time only)
 fly launch --no-deploy
 
-# 3. Set secrets
-fly secrets set ANTHROPIC_API_KEY=sk-ant-... GROQ_API_KEY=gsk_...
+# Minimum required secret: one model provider key
+fly secrets set ANTHROPIC_API_KEY=sk-ant-...
 
-# 4. Deploy!
+# Optional if you want voice input
+fly secrets set GROQ_API_KEY=gsk_...
+
+# Deploy
 bun run deploy
 ```
 
-That's it! Your app will be live at `https://your-app.fly.dev`
+The repo already includes:
+- `Dockerfile`
+- `fly.toml`
+- `bun run deploy`
 
-### Optional: Redis for rate limiting (recommended for production)
-```bash
-# Create Upstash Redis on Fly.io
-fly redis create
+### Useful Production Secrets
 
-# Attach to your app (auto-sets UPSTASH_REDIS_REST_URL)
-fly redis attach
+- Model providers:
+  - `MODEL_API_KEY`
+  - `ANTHROPIC_API_KEY`
+  - `OPENAI_API_KEY`
+  - `GOOGLE_API_KEY`
+- Voice:
+  - `GROQ_API_KEY`
+- Uploads:
+  - `S3_BUCKET`
+  - `S3_REGION`
+  - `S3_ENDPOINT`
+  - `S3_FORCE_PATH_STYLE`
+  - `S3_PUBLIC_BASE_URL`
+- Deck storage:
+  - `DECK_STORAGE=s3`
+  - `DECK_S3_BUCKET`
+  - `DECK_S3_PREFIX`
+  - `MAX_DECK_BYTES`
+- Rate limiting:
+  - `UPSTASH_REDIS_REST_URL`
+
+### Notes
+
+- Filesystem uploads and filesystem deck storage work for single-instance deployments, but object storage is safer if you expect machine restarts or multiple instances.
+- `S3_PUBLIC_BASE_URL` is useful when you want imported HTML and exported decks to use direct CDN or S3 asset URLs instead of `/images/...` redirects.
+- The server serves the production frontend itself, so you do not need a separate static host for the default Fly setup.
+
+## Browser and Native Tooling Requirements
+
+Some features need more than just Bun:
+
+- PPTX import needs `unzip`.
+- `bun run preview:pptx:app` and `bun run preview:pptx:visual` need Chrome or Chromium.
+- `bun run preview:pptx:visual` also needs LibreOffice or `soffice`, `pdftoppm`, and ImageMagick.
+- PPTX export rasterizes HTML-only slides through Playwright, so container deployments that use that path need a working Chromium runtime.
+
+If you only export slides that still have structured `source` data from import, export fidelity is better and the rasterization fallback is used less often.
+
+## Split Deployment: Static Frontend + Remote API
+
+You can deploy the frontend separately and point it at a remote Bun server.
+
+### Frontend
+
+Build the client with:
+
+```sh
+bun run build:client
 ```
 
-Without Redis, rate limits use in-memory storage (resets on deploy).
+Publish `app/dist` and set:
+- `VITE_SERVER_URL=https://your-api.example.com`
+- `VITE_MODEL_SERVICE_URL=https://your-api.example.com`
+- `VITE_DECK_STORAGE=server` if you want remote deck sync outside production defaults
 
-### Optional: S3 for uploads
-```bash
-fly secrets set S3_BUCKET=your-bucket S3_REGION=us-east-1
-```
+### Backend
 
----
+Deploy the Bun server with the same env vars described above. The root `Dockerfile` already builds the frontend, so it also works unchanged for container platforms such as App Runner, Render, or Railway.
 
-## Alternative: Cloudflare Pages + AWS App Runner
+### CORS
 
-Split deployment using Cloudflare Pages (frontend) + AWS App Runner (backend).
+The server CORS allowlist is currently code-configured in `server/server.ts`, not environment-configured. If your frontend runs on a different origin than:
+- `https://slidespell.com`
+- `https://www.slidespell.com`
+- `http://localhost:5173`
 
-## Prerequisites
-
-- Domain configured in Cloudflare DNS
-- AWS account with App Runner access
-- GitHub repo connected to both services
-
-## Architecture
-
-```
-[Cloudflare Pages] → static frontend (app/)
-         ↓
-[AWS App Runner]  → Bun backend (server/)
-         ↓
-[S3 bucket]       → image uploads (optional)
-```
-
-## Step 1: Deploy Backend (AWS App Runner)
-
-1. Use the repo `Dockerfile` (already present in the root).
-
-2. In AWS Console → App Runner → Create Service:
-   - Source: GitHub repo
-   - Branch: `main`
-   - Build: Use Dockerfile
-   - Port: `4000`
-   - Environment variables: `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, optional storage envs.
-
-3. Note the App Runner URL (e.g., `https://xxx.us-east-1.awsapprunner.com`)
-
-## Step 2: Deploy Frontend (Cloudflare Pages)
-
-1. In Cloudflare Dashboard → Pages → Create project:
-   - Connect GitHub repo
-   - Build command: `bun run build:client`
-   - Build output: `app/dist`
-   - Root directory: `/`
-
-2. Add environment variables:
-   - `VITE_MODEL_SERVICE_URL` = your App Runner URL from Step 1 (uploads + model calls)
-   - `VITE_SERVER_URL` = your App Runner URL from Step 1 (API + voice)
-
-3. Add custom domain in Pages settings
-
-## Step 3: Configure CORS
-
-Update `server/server.ts` to allow your production domain:
-```typescript
-const corsAllowlist = new Set([
-  "https://yourdomain.com",
-  "http://localhost:5173"
-]);
-```
-
-## Step 4: (Optional) S3 for Uploads
-
-1. Create S3 bucket with public read access
-2. Add to App Runner environment:
-   - `S3_BUCKET` = bucket name
-   - `S3_PUBLIC_BASE_URL` = `https://bucket.s3.amazonaws.com` (direct CDN/S3 URLs)
-   - Optional: `S3_REGION`, `S3_ENDPOINT`, `S3_FORCE_PATH_STYLE`, `S3_SIGNED_URL_EXPIRES`
-   - AWS credentials via IAM role (App Runner handles this)
-
-## Result
-
-- Frontend auto-deploys on git push via Cloudflare Pages
-- Backend auto-deploys on git push via App Runner
-- SSL handled automatically by both services
-- No servers to manage
-
-## Cost Estimate
-
-- Cloudflare Pages: Free tier (unlimited requests)
-- App Runner: ~$5-15/month (pay per use, scales to zero optional)
-- S3: ~$1-5/month depending on usage
+then update the allowlist before deploying the split setup.

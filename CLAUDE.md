@@ -9,21 +9,25 @@ Primary docs now live in `docs/guide.md`. This file stays focused on coding conv
 ## Coding Conventions
 
 ### TypeScript
+
 - Strict mode enabled in both client and server tsconfigs
 - `noUnusedLocals` and `noUnusedParameters` enabled (client)
 - Export shared types from `types.ts`
 
 ### React
+
 - Hooks only, no class components
 - Event handlers named `handleSomething()`
 - State in root component, props passed down
 
 ### CSS
+
 - Plain CSS with BEM-lite naming (`.chat-input`, `.chat-input-row`)
 - CSS variables in `app/src/index.css` for colors
 - 150-200ms transitions for interactive states
 
 ### File Organization
+
 - Component files paired with `.css` files
 - Hooks in `app/src/hooks/`
 - Single responsibility per file
@@ -31,12 +35,17 @@ Primary docs now live in `docs/guide.md`. This file stays focused on coding conv
 ## API Endpoints
 
 | Method | Path | Purpose |
-|--------|------|---------|
-| GET | /health | Health check |
-| POST | /api/generate | Generate slide HTML from chat |
-| POST | /api/voice-message | Transcribe audio + generate slide |
-| POST | /upload | Upload image file |
-| GET | /images/{filename} | Serve uploaded image |
+| --- | --- | --- |
+| `GET` | `/health` | Health check |
+| `POST` | `/api/generate` | Stream slide HTML generation |
+| `POST` | `/api/voice-message` | Transcribe audio and generate a slide |
+| `POST` | `/api/import` | Stream PPTX import progress and slides |
+| `POST` | `/api/export` | Export the current deck as PPTX |
+| `POST` | `/api/decks` | Create a persisted deck |
+| `GET` | `/api/decks/:id` | Load a persisted deck |
+| `PUT` | `/api/decks/:id` | Save a persisted deck |
+| `POST` | `/upload` | Upload image file |
+| `GET` | `/images/{filename}` | Serve uploaded image |
 
 ## Keyboard Shortcuts
 
@@ -48,15 +57,17 @@ Primary docs now live in `docs/guide.md`. This file stays focused on coding conv
 
 ## Documentation
 
-- `docs/guide.md` - consolidated overview (setup, env, architecture, specs)
-- `app/design.md` - architecture deep dive
-- `docs/slides.md` - multi-slide feature spec
-- `docs/speech.md` - voice input design
-- `bun run preview:pptx:app -- <pptx-path>` - preferred PPTX parser workflow; drives the real app import path and captures the rendered app output
+- `docs/guide.md` - consolidated overview (setup, env, runtime, API)
+- `app/design.md` - architecture walkthrough
+- `docs/slides.md` - multi-slide deck behavior
+- `docs/speech.md` - voice input workflow
+- `docs/deployment.md` - deployment notes
+- `server/README.md` - Bun service details
+- `bun run preview:pptx:app -- <pptx-path>` - preferred PPTX parser workflow; drives the real app import path and captures rendered app output
 - `bun run preview:pptx -- <pptx-path>` - generate an HTML preview with slide/master/layout sections
-- `bun run preview:pptx:visual -- <pptx-path>` - capture Chrome/Chromium screenshots and slide diffs against LibreOffice/PDF output
+- `bun run preview:pptx:visual -- <pptx-path>` - capture browser screenshots and compare against LibreOffice/PDF output
 
-## Work expectations
+## Work Expectations
 
 - **Mode**: Work mostly autonomously. Only ask when a shell command or URL needs permission; do not spend time on workarounds.
 - **Loop**: Identify a concrete product improvement, implement it, review output, add tests, commit, then immediately move to the next improvement.

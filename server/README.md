@@ -1,42 +1,86 @@
-# Image Upload Service (Bun)
+# Slide AI Bun Server
 
-Basic file host that matches the image-upload/retrieval plan in `app/design.md`. It accepts images, stores them locally, and hands back a public URL you can pass into the slide chat flow.
+The Bun service handles:
+- slide generation and streaming
+- voice transcription + generation
+- image uploads
+- deck persistence
+- PPTX import
+- PPTX export
+- frontend proxying in development and static serving in production
+
+## Quick Start
+
+```sh
+bun install
+ANTHROPIC_API_KEY=... bun run dev:server
+```
+
+By default the server listens on `http://localhost:4000`.
 
 ## Prerequisites
-- [Bun](https://bun.sh/) installed (tested with Bun 1.1+).
 
-## Run it
-```sh
-bun install           # from repo root, pulls client + server deps
-bun run dev:server
-# or directly:
-# bun run server/server.ts
-```
+- Bun 1.1+
+- `unzip` for PPTX import
 
-Configurable env vars:
-- `PORT` (default `4000`)
-- `UPLOAD_DIR` (default `<repo>/server/uploads`)
-- `PUBLIC_BASE_URL` (overrides host detection when running behind a proxy)
-- `MAX_UPLOAD_BYTES` (default `5242880` ≈ 5MB)
-- `S3_BUCKET` (enable S3 storage when set; otherwise uses local disk)
-- `S3_REGION` (defaults to `us-east-1`)
-- `S3_ENDPOINT` (optional, for MinIO/Localstack/custom endpoints)
-- `S3_FORCE_PATH_STYLE` (set `true` for path-style endpoints)
-- `S3_SIGNED_URL_EXPIRES` (seconds for GET presigns; default `3600`)
-- `CORS_ORIGIN` (default `*`; set to your frontend origin like `http://localhost:5173`)
+Optional tooling:
+- Chrome or Chromium for export rasterization and visual preview helpers
+- LibreOffice or `soffice`, `pdftoppm`, and ImageMagick for `preview:pptx:visual`
 
 ## Endpoints
-- `POST /upload` — multipart form with `file` field (jpg/png/webp/gif). Validates type and size, stores either on disk (`UPLOAD_DIR`) or S3 (`S3_BUCKET`), returns JSON `{ url, filename, size, type }`. The `url` is a stable `/images/<filename>` gateway you can hand to the LLM without exposing S3.
-- `GET /images/:filename` — disk mode: serves the binary; S3 mode: 302 redirect to a short-lived presigned URL on every request (no bucket public access required).
-- `GET /health` — simple liveness probe.
 
-## Example usage
-```sh
-# Upload an image
-curl -F "file=@/path/to/picture.png" http://localhost:4000/upload
+| Method | Path | Notes |
+| --- | --- | --- |
+| `GET` | `/health` | Liveness probe |
+| `POST` | `/api/generate` | SSE slide generation |
+| `POST` | `/api/voice-message` | Multipart audio transcription + generation |
+| `POST` | `/api/import` | SSE PPTX import |
+| `POST` | `/api/export` | Export deck to `.pptx` |
+| `POST` | `/api/decks` | Create remote deck |
+| `GET` | `/api/decks/:id` | Load remote deck |
+| `PUT` | `/api/decks/:id` | Save remote deck |
+| `POST` | `/upload` | Multipart image upload |
+| `GET` | `/images/:filename` | Serve local upload or redirect to S3 |
 
-# Retrieve it (replace <filename> from the upload response)
-curl -O http://localhost:4000/images/<filename>
-```
+## Behavior Notes
 
-Wire the returned `url` into the front-end by adding a chat note like `Uploaded image available at: <url>` before asking the LLM to place it on the slide (per the design doc).
+- `/api/generate` streams text over SSE and can return raw HTML, `<clarify>...</clarify>`, or a structured `<diagram>...</diagram>` payload that is converted to HTML server-side.
+- `/api/voice-message` transcribes with Groq Whisper, appends the transcription as a user turn, then runs the normal generation flow.
+- `/api/import` currently runs the import pipeline at concurrency `8`.
+- `/api/export` exports structured slides as editable PPTX content and rasterizes HTML-only slides with Playwright.
+
+## Storage Modes
+
+Uploads:
+- local disk by default
+- S3 when `S3_BUCKET` is set
+
+Decks:
+- filesystem JSON by default
+- S3 when `DECK_STORAGE=s3`
+
+Rate limiting:
+- in-memory by default
+- Upstash Redis when `UPSTASH_REDIS_REST_URL` is set
+
+## Key Environment Variables
+
+- `PORT=4000`
+- `CLIENT_DEV_URL=http://localhost:5173`
+- `DEFAULT_MODEL`
+- `MODEL_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`
+- `GROQ_API_KEY`
+- `UPLOAD_DIR`
+- `MAX_UPLOAD_BYTES`
+- `PUBLIC_BASE_URL`
+- `INTERNAL_BASE_URL`
+- `S3_BUCKET`, `S3_PUBLIC_BASE_URL`, `S3_REGION`, `S3_ENDPOINT`, `S3_FORCE_PATH_STYLE`, `S3_SIGNED_URL_EXPIRES`
+- `DECK_STORAGE`, `DECK_STORAGE_DIR`, `DECK_S3_BUCKET`, `DECK_S3_PREFIX`, `MAX_DECK_BYTES`
+- `UPSTASH_REDIS_REST_URL`
+
+## Development and Production Serving
+
+- In development, the server proxies unmatched `GET` requests to the Vite dev server.
+- In production, the server serves the built frontend from `app/dist`.
+
+The current CORS allowlist is code-configured in `server/server.ts`.
