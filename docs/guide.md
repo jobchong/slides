@@ -29,6 +29,7 @@ Note: the server currently proxies client + API from `http://localhost:4000` to 
 - `bun run dev`
 - `bun run dev:server`
 - `bun run dev:client`
+- `bun run preview:pptx:app -- <pptx-path> [output-dir]`
 - `bun run preview:pptx -- <pptx-path> [output-dir]`
 - `bun run preview:pptx:visual -- <pptx-path> [output-dir]`
 - `bun run typecheck:client`
@@ -78,8 +79,10 @@ Notes:
 - PPTX import concurrency is fixed at `8` on the server.
 - `S3_PUBLIC_BASE_URL` enables direct S3/CDN URLs in generated HTML.
 - Template extraction: masters/layouts are parsed and merged so template visuals appear in the import output.
+- Preferred parser-debug loop: `bun run preview:pptx:app -- <pptx-path> [output-dir]`. This drives the real app UI, uploads through `/api/import`, waits for the imported deck to render, and writes `report.html`, `report.json`, `deck-state.json`, per-slide HTML/source files, and screenshots of the exact `.slide` output a user sees.
 - Manual test helper `server/import/pptx-to-html.ts` now renders master/layout previews after slides for visual validation.
 - `server/import/pptx-visual-diff.ts` renders the generated preview through Chrome/Chromium, captures each slide/template section, diffs slides against LibreOffice PDF renders, and writes `report.json` plus `report.html`.
+- `preview:pptx` and `preview:pptx:visual` remain useful lower-level parser diagnostics, but they do not exercise the full app import/render path.
 
 ## Frontend Rendering
 - UI currently renders server-provided HTML while still retaining structured `SlideSource` data for future editing.

@@ -24,6 +24,9 @@ bun test
 
 PPTX import preview helpers:
 ```sh
+bun run preview:pptx:app -- ppts/template1.pptx
 bun run preview:pptx -- ppts/template1.pptx
 bun run preview:pptx:visual -- ppts/fullTemplate1.pptx
 ```
+
+Use `preview:pptx:app` as the default parser-debug loop. It uploads the PPTX through the real app, waits for `/api/import`, and captures the same rendered `.slide` output a user sees, along with `deck-state.json`, per-slide HTML, and screenshots.

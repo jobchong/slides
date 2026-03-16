@@ -10,6 +10,7 @@
     "build:client": "bunx vite build --config app/vite.config.ts",
     "preview": "bunx vite preview --config app/vite.config.ts",
     "preview:pptx": "bun server/import/pptx-to-html.ts",
+    "preview:pptx:app": "bun server/import/pptx-app-visual.ts",
     "preview:pptx:visual": "bun server/import/pptx-visual-diff.ts",
     "test": "SLIDEAI_SILENCE_LOGS=true bun test app server",
     "test:e2e": "bunx playwright test",
