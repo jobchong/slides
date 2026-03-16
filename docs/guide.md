@@ -29,6 +29,8 @@ Note: the server currently proxies client + API from `http://localhost:4000` to 
 - `bun run dev`
 - `bun run dev:server`
 - `bun run dev:client`
+- `bun run preview:pptx -- <pptx-path> [output-dir]`
+- `bun run preview:pptx:visual -- <pptx-path> [output-dir]`
 - `bun run typecheck:client`
 - `bun run typecheck:server`
 
@@ -77,6 +79,7 @@ Notes:
 - `S3_PUBLIC_BASE_URL` enables direct S3/CDN URLs in generated HTML.
 - Template extraction: masters/layouts are parsed and merged so template visuals appear in the import output.
 - Manual test helper `server/import/pptx-to-html.ts` now renders master/layout previews after slides for visual validation.
+- `server/import/pptx-visual-diff.ts` renders the generated preview through Chrome/Chromium, captures each slide/template section, diffs slides against LibreOffice PDF renders, and writes `report.json` plus `report.html`.
 
 ## Frontend Rendering
 - UI currently renders server-provided HTML while still retaining structured `SlideSource` data for future editing.

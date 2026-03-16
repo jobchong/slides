@@ -52,6 +52,8 @@ Primary docs now live in `docs/guide.md`. This file stays focused on coding conv
 - `app/design.md` - architecture deep dive
 - `docs/slides.md` - multi-slide feature spec
 - `docs/speech.md` - voice input design
+- `bun run preview:pptx -- <pptx-path>` - generate an HTML preview with slide/master/layout sections
+- `bun run preview:pptx:visual -- <pptx-path>` - capture Chrome/Chromium screenshots and slide diffs against LibreOffice/PDF output
 
 ## Work expectations
 

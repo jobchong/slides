@@ -21,3 +21,9 @@ Additional deep dives:
 ```sh
 bun test
 ```
+
+PPTX import preview helpers:
+```sh
+bun run preview:pptx -- ppts/template1.pptx
+bun run preview:pptx:visual -- ppts/fullTemplate1.pptx
+```
