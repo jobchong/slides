@@ -61,6 +61,7 @@ export function useChatGeneration({
   const handleSend = useCallback(
     async (userMessage: string) => {
       const currentSlide = slides[currentSlideIndex];
+      const originalHtml = currentSlide.html;
       const newMessages: Message[] = [
         ...messages,
         { role: "user", content: userMessage },
@@ -70,21 +71,28 @@ export function useChatGeneration({
       setError(null);
 
       try {
+        let hasStreamedHtml = false;
         const result = await callModelStream(
           newMessages,
           currentSlide.html,
           model,
-          (partialHtml) => updateCurrentSlideHtml(partialHtml)
+          (partialHtml) => {
+            if (partialHtml.length === 0 && !hasStreamedHtml) {
+              return;
+            }
+            hasStreamedHtml = true;
+            updateCurrentSlideHtml(partialHtml);
+          }
         );
 
-        commitCurrentSlideHtml(result.html);
-
         if (result.clarification) {
+          updateCurrentSlideHtml(originalHtml);
           setMessages([
             ...newMessages,
             { role: "assistant", content: result.clarification },
           ]);
         } else {
+          commitCurrentSlideHtml(result.html);
           setMessages([...newMessages, { role: "assistant", content: "Done." }]);
         }
       } catch (err) {
@@ -118,8 +126,8 @@ export function useChatGeneration({
           { role: "user", content: transcription },
           { role: "assistant", content: "Done." },
         ]);
+        commitCurrentSlideHtml(html);
       }
-      commitCurrentSlideHtml(html);
     },
     [messages, setMessages, commitCurrentSlideHtml]
   );
