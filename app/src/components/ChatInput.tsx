@@ -289,17 +289,16 @@ export function ChatInput({
             {completedUploads.length > 0 && !recordingState.includes("recording") && (
               <div className="chat-attachments-inline" aria-label="Attached images">
                 {completedUploads.map((upload) => (
-                  <div className="chat-attachment-chip" key={upload.id}>
+                  <button
+                    type="button"
+                    className="chat-attachment-chip"
+                    key={upload.id}
+                    onClick={() => handleRemoveAttachment(upload.id)}
+                    aria-label={`Remove attachment ${upload.name}`}
+                  >
                     <img src={upload.url} alt={upload.name} className="chat-attachment-thumb" />
-                    <button
-                      type="button"
-                      className="chat-attachment-remove"
-                      onClick={() => handleRemoveAttachment(upload.id)}
-                      aria-label={`Remove ${upload.name}`}
-                    >
-                      ×
-                    </button>
-                  </div>
+                    <span className="chat-attachment-remove" aria-hidden="true">×</span>
+                  </button>
                 ))}
               </div>
             )}
@@ -420,11 +419,15 @@ export function ChatInput({
                 {recordingState !== "recording" && (
                   <button
                     type="submit"
-                    className="chat-send"
+                    className={`chat-send ${isLoading ? "chat-send--loading" : ""}`}
                     disabled={isSendDisabled}
-                    aria-label="Send message"
+                    aria-label={isLoading ? "Generating..." : "Send message"}
                   >
-                    <span className="chat-send-icon" aria-hidden="true" />
+                    {isLoading ? (
+                      <span className="chat-send-spinner" aria-hidden="true" />
+                    ) : (
+                      <span className="chat-send-icon" aria-hidden="true" />
+                    )}
                   </button>
                 )}
               </div>

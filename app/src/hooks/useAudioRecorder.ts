@@ -35,7 +35,7 @@ export function useAudioRecorder(): UseAudioRecorderResult {
   useEffect(() => {
     return () => {
       if (timerRef.current) {
-        clearInterval(timerRef.current);
+        cancelAnimationFrame(timerRef.current);
       }
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop());
@@ -102,16 +102,19 @@ export function useAudioRecorder(): UseAudioRecorderResult {
       startTimeRef.current = Date.now();
       setRecordingState("recording");
 
-      // Start timer
-      timerRef.current = window.setInterval(() => {
+      // Start timer using requestAnimationFrame for smoother updates
+      const tick = () => {
         const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
         setRecordingDuration(elapsed);
 
         // Auto-stop at max duration
         if (elapsed >= MAX_RECORDING_SECONDS) {
           stopRecording();
+        } else {
+          timerRef.current = window.requestAnimationFrame(tick);
         }
-      }, 1000);
+      };
+      timerRef.current = window.requestAnimationFrame(tick);
     } catch (err) {
       if (err instanceof DOMException && err.name === "NotAllowedError") {
         setError("Microphone permission denied. Please allow access.");
@@ -132,7 +135,7 @@ export function useAudioRecorder(): UseAudioRecorderResult {
 
       mediaRecorder.onstop = () => {
         if (timerRef.current) {
-          clearInterval(timerRef.current);
+          cancelAnimationFrame(timerRef.current);
           timerRef.current = null;
         }
 
@@ -156,7 +159,7 @@ export function useAudioRecorder(): UseAudioRecorderResult {
     }
 
     if (timerRef.current) {
-      clearInterval(timerRef.current);
+      cancelAnimationFrame(timerRef.current);
       timerRef.current = null;
     }
 

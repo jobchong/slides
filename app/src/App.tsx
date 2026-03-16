@@ -168,12 +168,14 @@ export default function App() {
         <div className="app-slide-container" role="region" aria-label="Current slide">
           <SlideView html={currentSlide.html} isLoading={isLoading} />
         </div>
-        <SlideNavigation
-          currentIndex={currentSlideIndex}
-          total={slides.length}
-          onPrev={handlePrevSlide}
-          onNext={handleNextSlide}
-        />
+        {slides.length > 1 && (
+          <SlideNavigation
+            currentIndex={currentSlideIndex}
+            total={slides.length}
+            onPrev={handlePrevSlide}
+            onNext={handleNextSlide}
+          />
+        )}
         <div className="app-chat" role="region" aria-label="Chat interface">
           <ChatInput
             messages={messages}
