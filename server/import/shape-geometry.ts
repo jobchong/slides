@@ -22,9 +22,26 @@ type PresetShapeGeometryOptions = {
   flipV?: boolean;
 };
 
+const PARALLELOGRAM_DEFAULTS = {
+  adj: 25000,
+};
+
+const TRAPEZOID_DEFAULTS = {
+  adj: 25000,
+};
+
+const CHEVRON_DEFAULTS = {
+  adj: 50000,
+};
+
 const HEXAGON_DEFAULTS = {
   adj: 25000,
   vf: 115470,
+};
+
+const PENTAGON_RATIOS = {
+  shoulderY: 0.381966,
+  baseInset: 0.190983,
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -33,6 +50,37 @@ function clamp(value: number, min: number, max: number): number {
 
 function roundCoordinate(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function transformPoint(
+  point: Point,
+  size: GeometrySize,
+  options: PresetShapeGeometryOptions
+): Point {
+  return {
+    x: options.flipH ? size.width - point.x : point.x,
+    y: options.flipV ? size.height - point.y : point.y,
+  };
+}
+
+function buildPolygonGeometry(
+  size: GeometrySize,
+  points: Point[],
+  options: PresetShapeGeometryOptions = {}
+): PresetShapeGeometry {
+  const svgPath = points
+    .map((point, index) => {
+      const transformed = transformPoint(point, size, options);
+      return `${index === 0 ? "M" : "L"} ${roundCoordinate(transformed.x)} ${roundCoordinate(
+        transformed.y
+      )}`;
+    })
+    .join(" ");
+
+  return {
+    svgPath: `${svgPath} Z`,
+    svgViewBox: { width: size.width, height: size.height },
+  };
 }
 
 export function parsePresetAdjustments(xml: string): ShapeAdjustments {
@@ -58,8 +106,22 @@ export function buildPresetShapeGeometry(
   if (size.width <= 0 || size.height <= 0) return null;
 
   switch (shapeType) {
+    case "diamond":
+      return buildDiamondGeometry(size, options);
+    case "triangle":
+      return buildTriangleGeometry(size, options);
+    case "rtTriangle":
+      return buildRightTriangleGeometry(size, options);
+    case "parallelogram":
+      return buildParallelogramGeometry(size, adjustments, options);
+    case "trapezoid":
+      return buildTrapezoidGeometry(size, adjustments, options);
+    case "pentagon":
+      return buildPentagonGeometry(size, options);
+    case "chevron":
+      return buildChevronGeometry(size, adjustments, options);
     case "hexagon":
-      return buildHexagonGeometry(size, adjustments);
+      return buildHexagonGeometry(size, adjustments, options);
     case "line":
       return buildLineGeometry(options);
     default:
@@ -67,9 +129,146 @@ export function buildPresetShapeGeometry(
   }
 }
 
+function buildDiamondGeometry(
+  size: GeometrySize,
+  options: PresetShapeGeometryOptions
+): PresetShapeGeometry {
+  const { width, height } = size;
+  return buildPolygonGeometry(
+    size,
+    [
+      { x: width / 2, y: 0 },
+      { x: width, y: height / 2 },
+      { x: width / 2, y: height },
+      { x: 0, y: height / 2 },
+    ],
+    options
+  );
+}
+
+function buildTriangleGeometry(
+  size: GeometrySize,
+  options: PresetShapeGeometryOptions
+): PresetShapeGeometry {
+  const { width, height } = size;
+  return buildPolygonGeometry(
+    size,
+    [
+      { x: width / 2, y: 0 },
+      { x: width, y: height },
+      { x: 0, y: height },
+    ],
+    options
+  );
+}
+
+function buildRightTriangleGeometry(
+  size: GeometrySize,
+  options: PresetShapeGeometryOptions
+): PresetShapeGeometry {
+  const { width, height } = size;
+  return buildPolygonGeometry(
+    size,
+    [
+      { x: 0, y: 0 },
+      { x: width, y: height },
+      { x: 0, y: height },
+    ],
+    options
+  );
+}
+
+function buildParallelogramGeometry(
+  size: GeometrySize,
+  adjustments: ShapeAdjustments,
+  options: PresetShapeGeometryOptions
+): PresetShapeGeometry {
+  const { width, height } = size;
+  const adj = clamp(adjustments.adj ?? PARALLELOGRAM_DEFAULTS.adj, 0, 50000);
+  const offset = (width * adj) / 100000;
+
+  return buildPolygonGeometry(
+    size,
+    [
+      { x: offset, y: 0 },
+      { x: width, y: 0 },
+      { x: width - offset, y: height },
+      { x: 0, y: height },
+    ],
+    options
+  );
+}
+
+function buildTrapezoidGeometry(
+  size: GeometrySize,
+  adjustments: ShapeAdjustments,
+  options: PresetShapeGeometryOptions
+): PresetShapeGeometry {
+  const { width, height } = size;
+  const adj = clamp(adjustments.adj ?? TRAPEZOID_DEFAULTS.adj, 0, 50000);
+  const inset = (width * adj) / 100000;
+
+  return buildPolygonGeometry(
+    size,
+    [
+      { x: inset, y: 0 },
+      { x: width - inset, y: 0 },
+      { x: width, y: height },
+      { x: 0, y: height },
+    ],
+    options
+  );
+}
+
+function buildPentagonGeometry(
+  size: GeometrySize,
+  options: PresetShapeGeometryOptions
+): PresetShapeGeometry {
+  const { width, height } = size;
+  const shoulderY = height * PENTAGON_RATIOS.shoulderY;
+  const baseInset = width * PENTAGON_RATIOS.baseInset;
+
+  return buildPolygonGeometry(
+    size,
+    [
+      { x: width / 2, y: 0 },
+      { x: width, y: shoulderY },
+      { x: width - baseInset, y: height },
+      { x: baseInset, y: height },
+      { x: 0, y: shoulderY },
+    ],
+    options
+  );
+}
+
+function buildChevronGeometry(
+  size: GeometrySize,
+  adjustments: ShapeAdjustments,
+  options: PresetShapeGeometryOptions
+): PresetShapeGeometry {
+  const { width, height } = size;
+  const adj = clamp(adjustments.adj ?? CHEVRON_DEFAULTS.adj, 0, 100000);
+  const inset = (width * adj) / 200000;
+  const bodyX = width - inset;
+
+  return buildPolygonGeometry(
+    size,
+    [
+      { x: 0, y: 0 },
+      { x: bodyX, y: 0 },
+      { x: width, y: height / 2 },
+      { x: bodyX, y: height },
+      { x: 0, y: height },
+      { x: inset, y: height / 2 },
+    ],
+    options
+  );
+}
+
 function buildHexagonGeometry(
   size: GeometrySize,
-  adjustments: ShapeAdjustments
+  adjustments: ShapeAdjustments,
+  options: PresetShapeGeometryOptions
 ): PresetShapeGeometry {
   // ECMA-376 presetShapeDefinitions.xml <hexagon>.
   const w = size.width;
@@ -88,12 +287,18 @@ function buildHexagonGeometry(
   const y1 = roundCoordinate(clamp(vc - dy1, 0, h));
   const y2 = roundCoordinate(clamp(vc + dy1, 0, h));
 
-  return {
-    svgPath: `M 0 ${roundCoordinate(vc)} L ${x1} ${y1} L ${x2} ${y1} L ${w} ${roundCoordinate(
-      vc
-    )} L ${x2} ${y2} L ${x1} ${y2} Z`,
-    svgViewBox: { width: w, height: h },
-  };
+  return buildPolygonGeometry(
+    size,
+    [
+      { x: 0, y: roundCoordinate(vc) },
+      { x: x1, y: y1 },
+      { x: x2, y: y1 },
+      { x: w, y: roundCoordinate(vc) },
+      { x: x2, y: y2 },
+      { x: x1, y: y2 },
+    ],
+    options
+  );
 }
 
 function buildLineGeometry(options: PresetShapeGeometryOptions): PresetShapeGeometry {
