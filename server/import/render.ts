@@ -260,9 +260,11 @@ function renderShapeElement(element: EditableElement): string {
     const lineCap = shape.lineCap === "round" ? "round" : shape.lineCap === "square" ? "square" : "butt";
     const strokeDasharray = shape.strokeDasharray;
     const dashAttr = strokeDasharray ? ` stroke-dasharray="${strokeDasharray}"` : "";
+    const lineStart = shape.lineStart || { x: 0, y: 0 };
+    const lineEnd = shape.lineEnd || { x: 100, y: 100 };
     lineSvg = `
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="width:100%; height:100%; display:block;">
-        <line x1="0" y1="50" x2="100" y2="50" stroke="${stroke}" stroke-width="${strokeWidthPx}" stroke-linecap="${lineCap}"${dashAttr}></line>
+        <line x1="${lineStart.x}" y1="${lineStart.y}" x2="${lineEnd.x}" y2="${lineEnd.y}" stroke="${stroke}" stroke-width="${strokeWidthPx}" stroke-linecap="${lineCap}"${dashAttr} vector-effect="non-scaling-stroke"></line>
       </svg>
     `.trim();
   }

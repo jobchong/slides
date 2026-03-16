@@ -20,6 +20,7 @@ import type {
 } from "./types";
 import { EMU_PER_POINT } from "./types";
 import { resolveColor } from "./theme";
+import { buildPresetShapeGeometry, parsePresetAdjustments } from "./shape-geometry";
 
 // Default slide size (10" x 7.5" in EMU)
 const DEFAULT_SLIDE_SIZE: SlideSize = {
@@ -438,7 +439,7 @@ function parseShape(
   const spPrXml = spPrMatch[1];
 
   // Parse transform
-  const { bounds, rotation } = parseTransform(spPrXml, slideSize, parentTransform);
+  const { bounds, rotation, size, flipH, flipV } = parseTransform(spPrXml, slideSize, parentTransform);
   if (!bounds) {
     logInfo("No bounds found in shape", { slideIndex, spPrXmlPreview: spPrXml.slice(0, 200) });
     return null;
@@ -468,14 +469,15 @@ function parseShape(
   // Parse shape type
   const shapeType = parseShapeType(spPrXml);
   const customGeometry = parseCustomGeometry(spPrXml);
+  const presetGeometry = !customGeometry && size
+    ? buildPresetShapeGeometry(shapeType, size, parsePresetAdjustments(spPrXml), { flipH, flipV })
+    : null;
 
   // Parse fill
   const fill = parseFill(spPrXml, theme);
 
   // Parse stroke
   let { stroke, strokeWidth, lineCap, lineHead, lineTail } = parseStroke(spPrXml, theme);
-  const flipH = /<a:xfrm[^>]*flipH="1"/.test(spPrXml);
-  const flipV = /<a:xfrm[^>]*flipV="1"/.test(spPrXml);
   if (shapeType === "line" && (flipH || flipV)) {
     const tmp = lineHead;
     lineHead = lineTail;
@@ -529,8 +531,10 @@ function parseShape(
       lineCap,
       lineHead,
       lineTail,
-      svgPath: customGeometry?.path,
-      svgViewBox: customGeometry?.viewBox,
+      lineStart: presetGeometry?.lineStart,
+      lineEnd: presetGeometry?.lineEnd,
+      svgPath: customGeometry?.path || presetGeometry?.svgPath,
+      svgViewBox: customGeometry?.viewBox || presetGeometry?.svgViewBox,
     };
   }
 
@@ -641,10 +645,16 @@ function parseTransform(
   xml: string,
   slideSize: SlideSize,
   parentTransform?: { offX: number; offY: number; scaleX: number; scaleY: number }
-): { bounds: Bounds | null; rotation: number | undefined } {
+): {
+  bounds: Bounds | null;
+  rotation: number | undefined;
+  size?: { width: number; height: number };
+  flipH: boolean;
+  flipV: boolean;
+} {
   const xfrmMatch = xml.match(/<a:xfrm([^>]*)>([\s\S]*?)<\/a:xfrm>/);
   if (!xfrmMatch) {
-    return { bounds: null, rotation: undefined };
+    return { bounds: null, rotation: undefined, flipH: false, flipV: false };
   }
 
   const xfrmAttrs = xfrmMatch[1];
@@ -653,37 +663,47 @@ function parseTransform(
   // Parse rotation (in 60000ths of a degree)
   const rotMatch = xfrmAttrs.match(/rot="(-?\d+)"/);
   const rotation = rotMatch ? parseInt(rotMatch[1]) / 60000 : undefined;
+  const flipH = /flipH="1"/.test(xfrmAttrs);
+  const flipV = /flipV="1"/.test(xfrmAttrs);
 
   // Parse position and size
   const offMatch = xfrmContent.match(/<a:off x="(\d+)" y="(\d+)"/);
   const extMatch = xfrmContent.match(/<a:ext cx="(\d+)" cy="(\d+)"/);
 
   if (!offMatch || !extMatch) {
-    return { bounds: null, rotation };
+    return { bounds: null, rotation, flipH, flipV };
   }
 
   let x = parseInt(offMatch[1]);
   let y = parseInt(offMatch[2]);
-  let width = parseInt(extMatch[1]);
-  let height = parseInt(extMatch[2]);
+  const width = parseInt(extMatch[1]);
+  const height = parseInt(extMatch[2]);
+  let scaledWidth = width;
+  let scaledHeight = height;
 
   // Apply parent transform if exists
   if (parentTransform) {
     x = parentTransform.offX + x * parentTransform.scaleX;
     y = parentTransform.offY + y * parentTransform.scaleY;
-    width = width * parentTransform.scaleX;
-    height = height * parentTransform.scaleY;
+    scaledWidth = width * parentTransform.scaleX;
+    scaledHeight = height * parentTransform.scaleY;
   }
 
   // Convert EMU to percentage
   const bounds: Bounds = {
     x: (x / slideSize.width) * 100,
     y: (y / slideSize.height) * 100,
-    width: (width / slideSize.width) * 100,
-    height: (height / slideSize.height) * 100,
+    width: (scaledWidth / slideSize.width) * 100,
+    height: (scaledHeight / slideSize.height) * 100,
   };
 
-  return { bounds, rotation };
+  return {
+    bounds,
+    rotation,
+    size: { width, height },
+    flipH,
+    flipV,
+  };
 }
 
 /**

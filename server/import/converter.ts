@@ -128,6 +128,8 @@ export function convertToEditable(
         fill: element.shape.fill || "none",
         stroke: element.shape.stroke,
         strokeWidth: element.shape.strokeWidth,
+        lineStart: element.shape.lineStart,
+        lineEnd: element.shape.lineEnd,
         svgPath: element.shape.svgPath,
         svgViewBox: element.shape.svgViewBox,
       };
@@ -167,6 +169,8 @@ export function convertToEditable(
         lineCap: element.shape.lineCap,
         lineHead: element.shape.lineHead,
         lineTail: element.shape.lineTail,
+        lineStart: element.shape.lineStart,
+        lineEnd: element.shape.lineEnd,
         svgPath: element.shape.svgPath,
         svgViewBox: element.shape.svgViewBox,
       },

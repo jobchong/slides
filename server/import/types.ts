@@ -83,6 +83,8 @@ export interface ShapeData {
   lineCap?: "round" | "square" | "flat";
   lineHead?: "oval" | "none";
   lineTail?: "oval" | "none";
+  lineStart?: { x: number; y: number };
+  lineEnd?: { x: number; y: number };
   svgPath?: string;
   svgViewBox?: { width: number; height: number };
 }
@@ -167,6 +169,8 @@ export interface EditableShapeElement {
   lineCap?: "round" | "square" | "flat";
   lineHead?: "oval" | "none";
   lineTail?: "oval" | "none";
+  lineStart?: { x: number; y: number };
+  lineEnd?: { x: number; y: number };
   svgPath?: string;
   svgViewBox?: { width: number; height: number };
 }

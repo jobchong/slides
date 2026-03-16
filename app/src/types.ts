@@ -58,6 +58,8 @@ export interface ShapeElement {
   lineCap?: "round" | "square" | "flat";
   lineHead?: "oval" | "none";
   lineTail?: "oval" | "none";
+  lineStart?: { x: number; y: number };
+  lineEnd?: { x: number; y: number };
   svg?: string;               // For custom shapes
   svgPath?: string;
   svgViewBox?: { width: number; height: number };
