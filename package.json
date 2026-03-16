@@ -13,6 +13,7 @@
     "preview:pptx:app": "bun server/import/pptx-app-visual.ts",
     "preview:pptx:visual": "bun server/import/pptx-visual-diff.ts",
     "test": "SLIDEAI_SILENCE_LOGS=true bun test app server",
+    "test:coverage": "SLIDEAI_SILENCE_LOGS=true bun test --coverage app server",
     "test:e2e": "bunx playwright test",
     "test:e2e:ui": "bunx playwright test --ui",
     "test:e2e:headed": "bunx playwright test --headed",
