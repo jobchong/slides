@@ -7,6 +7,16 @@ export interface DeckResponse {
   updatedAt: string;
 }
 
+export class DeckApiError extends Error {
+  status?: number;
+
+  constructor(message: string, options?: { status?: number }) {
+    super(message);
+    this.name = "DeckApiError";
+    this.status = options?.status;
+  }
+}
+
 const DECK_ID_KEY = "slideai:deck:id";
 const REQUEST_TIMEOUT = 30_000;
 
@@ -61,7 +71,7 @@ export async function createDeck(state: DeckState): Promise<DeckResponse> {
   } catch (err) {
     clearTimeout(timeoutId);
     if (err instanceof Error && err.name === "AbortError") {
-      throw new Error("Create deck request timed out");
+      throw new DeckApiError("Create deck request timed out");
     }
     throw err;
   }
@@ -69,7 +79,7 @@ export async function createDeck(state: DeckState): Promise<DeckResponse> {
 
   if (!response.ok) {
     const errorMessage = await parseErrorResponse(response);
-    throw new Error(errorMessage);
+    throw new DeckApiError(errorMessage, { status: response.status });
   }
 
   return response.json();
@@ -88,7 +98,7 @@ export async function loadDeck(id: string): Promise<DeckResponse> {
   } catch (err) {
     clearTimeout(timeoutId);
     if (err instanceof Error && err.name === "AbortError") {
-      throw new Error("Load deck request timed out");
+      throw new DeckApiError("Load deck request timed out");
     }
     throw err;
   }
@@ -96,7 +106,7 @@ export async function loadDeck(id: string): Promise<DeckResponse> {
 
   if (!response.ok) {
     const errorMessage = await parseErrorResponse(response);
-    throw new Error(errorMessage);
+    throw new DeckApiError(errorMessage, { status: response.status });
   }
 
   return response.json();
@@ -117,7 +127,7 @@ export async function saveDeck(id: string, state: DeckState): Promise<DeckRespon
   } catch (err) {
     clearTimeout(timeoutId);
     if (err instanceof Error && err.name === "AbortError") {
-      throw new Error("Save deck request timed out");
+      throw new DeckApiError("Save deck request timed out");
     }
     throw err;
   }
@@ -125,7 +135,7 @@ export async function saveDeck(id: string, state: DeckState): Promise<DeckRespon
 
   if (!response.ok) {
     const errorMessage = await parseErrorResponse(response);
-    throw new Error(errorMessage);
+    throw new DeckApiError(errorMessage, { status: response.status });
   }
 
   return response.json();

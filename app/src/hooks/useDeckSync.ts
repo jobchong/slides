@@ -4,6 +4,7 @@ import { normalizeDeckState } from "../deckState";
 import {
   clearStoredDeckId,
   createDeck,
+  DeckApiError,
   getStoredDeckId,
   isServerDeckStorageEnabled,
   loadDeck,
@@ -63,7 +64,7 @@ export function useDeckSync({
         setIsHydrated(true);
         return;
       }
-      if (isHydrated && !deckId) {
+      if (isHydrated) {
         return;
       }
 
@@ -71,17 +72,30 @@ export function useDeckSync({
         if (deckId) {
           const remote = await loadDeck(deckId);
           const normalized = normalizeDeckState(remote.state);
-          if (normalized && isActive) {
+          if (!normalized) {
+            throw new Error("Loaded deck state is invalid.");
+          }
+
+          if (isActive) {
             setSlides(normalized.slides);
             setCurrentSlideIndex(normalized.currentSlideIndex);
             setMessages(normalized.messages);
             setModel(normalized.model || model);
             setIsHydrated(true);
-            return;
           }
+          return;
         }
-      } catch {
-        // Deck doesn't exist or failed to load - will create a new one below
+      } catch (err) {
+        if (!isActive) return;
+
+        if (!(err instanceof DeckApiError) || err.status !== 404) {
+          const message = err instanceof Error ? err.message : "Failed to load deck";
+          setError(`Failed to load deck: ${message}`);
+          setIsHydrated(true);
+          return;
+        }
+
+        clearStoredDeckId();
       } finally {
         if (!isActive) return;
       }
@@ -97,8 +111,10 @@ export function useDeckSync({
         if (!isActive) return;
         setDeckId(created.id);
         setStoredDeckId(created.id);
-      } catch {
-        // Failed to create deck - localStorage fallback will be used
+      } catch (err) {
+        setDeckId(null);
+        const message = err instanceof Error ? err.message : "Failed to create deck";
+        setError(`Failed to create deck: ${message}`);
       } finally {
         if (isActive) setIsHydrated(true);
       }
