@@ -475,7 +475,10 @@ function parseShape(
     : null;
 
   // Parse fill
-  const fill = parseFill(spPrXml, theme);
+  let fill = parseFill(spPrXml, theme);
+  if (customGeometry && !customGeometry.hasClosedPath) {
+    fill = "none";
+  }
 
   // Parse stroke
   let { stroke, strokeWidth, strokeDasharray, lineCap, lineHead, lineTail } = parseStroke(spPrXml, theme);
@@ -553,7 +556,11 @@ function parseShape(
   return element;
 }
 
-function parseCustomGeometry(xml: string): { path: string; viewBox: { width: number; height: number } } | null {
+function parseCustomGeometry(xml: string): {
+  path: string;
+  viewBox: { width: number; height: number };
+  hasClosedPath: boolean;
+} | null {
   const custMatch = xml.match(/<a:custGeom>([\s\S]*?)<\/a:custGeom>/);
   if (!custMatch) return null;
 
@@ -561,6 +568,7 @@ function parseCustomGeometry(xml: string): { path: string; viewBox: { width: num
   let pathMatch;
   let viewBox: { width: number; height: number } | null = null;
   const dParts: string[] = [];
+  let hasClosedPath = false;
 
   while ((pathMatch = pathRegex.exec(custMatch[1])) !== null) {
     if (!viewBox) {
@@ -572,6 +580,7 @@ function parseCustomGeometry(xml: string): { path: string; viewBox: { width: num
     while ((cmdMatch = cmdRegex.exec(pathXml)) !== null) {
       if (!cmdMatch[1] && cmdMatch[0].startsWith("<a:close")) {
         dParts.push("Z");
+        hasClosedPath = true;
         continue;
       }
 
@@ -595,7 +604,7 @@ function parseCustomGeometry(xml: string): { path: string; viewBox: { width: num
   }
 
   if (!viewBox || dParts.length === 0) return null;
-  return { path: dParts.join(" "), viewBox };
+  return { path: dParts.join(" "), viewBox, hasClosedPath };
 }
 
 /**

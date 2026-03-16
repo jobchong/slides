@@ -120,6 +120,31 @@ describe("PPTX preset shape import", () => {
     expect(rendered).toContain("<path d=\"M 0 ");
   });
 
+  test("renders open custom geometry as stroke-only paths", async () => {
+    const pptxPath = join(pptxDir, "fullTemplate1.pptx");
+    const { extractedSlide, theme, slideRels } = await loadSlide(pptxPath, 10);
+    const source = buildSlideSource(extractedSlide, theme, slideRels);
+
+    const connector = source.elements.find(
+      (el) =>
+        el.type === "shape" &&
+        el.shape?.svgPath?.startsWith("M 3521 1672 L 2970 629 L 0 0")
+    );
+
+    expect(connector).toBeDefined();
+    expect(connector?.shape?.fill).toBe("none");
+    expect(connector?.shape?.stroke).toBe("#7f59ae");
+
+    const rendered = renderSlideHtml({
+      background: { type: "none" },
+      elements: [connector!],
+      import: { slideIndex: 10 },
+    });
+
+    expect(rendered).toContain('fill="none"');
+    expect(rendered).toContain('stroke="#7f59ae"');
+  });
+
   test("preserves preset line direction when xfrm flips are present", async () => {
     const pptxPath = join(pptxDir, "fullTemplate1.pptx");
     const { extractedSlide, theme, slideRels } = await loadSlide(pptxPath, 1);
