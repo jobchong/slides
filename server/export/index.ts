@@ -1,3 +1,5 @@
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import JSZip from "jszip";
 import PptxGenJS from "pptxgenjs";
 import { imageSize } from "image-size";
@@ -12,6 +14,8 @@ const EMU_PER_INCH = 914400;
 const SLIDE_PIXEL_SIZE = { width: 1280, height: 720 };
 const EXPORT_OBJECT_PREFIX = "slideai-";
 const SAFE_UPLOAD_FILENAME_PATTERN = /^[A-Za-z0-9._-]+$/;
+const MAX_ASSET_REDIRECTS = 4;
+const CSS_URL_PATTERN = /url\(\s*(['"]?)(.*?)\1\s*\)/gi;
 
 export type ExportAssetUrlOptions = {
   gatewayBaseUrl: string;
@@ -103,6 +107,7 @@ function resolveExportAssetUrl(url: string, options: ExportAssetUrlOptions): str
   }
 
   const allowedGatewayBases = [
+    gatewayBaseUrl,
     normalizeBaseUrl(options.requestBaseUrl),
     normalizeBaseUrl(options.publicBaseUrl),
   ].filter((value): value is string => Boolean(value));
@@ -125,10 +130,138 @@ function resolveExportAssetUrl(url: string, options: ExportAssetUrlOptions): str
   throw new InvalidExportAssetUrlError(url);
 }
 
-async function imageUrlToData(url: string, options: ExportAssetUrlOptions): Promise<string> {
-  if (url.startsWith("data:")) return url;
-  const resolved = resolveExportAssetUrl(url, options);
-  const response = await fetch(resolved);
+function isPublicIpv4(address: string): boolean {
+  const octets = address.split(".").map((part) => Number(part));
+  if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+    return false;
+  }
+
+  const [a, b, c] = octets;
+  if (a === 0 || a === 10 || a === 127) return false;
+  if (a === 100 && b >= 64 && b <= 127) return false;
+  if (a === 169 && b === 254) return false;
+  if (a === 172 && b >= 16 && b <= 31) return false;
+  if (a === 192 && b === 0 && (c === 0 || c === 2)) return false;
+  if (a === 192 && b === 168) return false;
+  if (a === 198 && (b === 18 || b === 19)) return false;
+  if (a === 198 && b === 51 && c === 100) return false;
+  if (a === 203 && b === 0 && c === 113) return false;
+  if (a >= 224) return false;
+  return true;
+}
+
+function isPublicIpv6(address: string): boolean {
+  const normalized = address.toLowerCase();
+  if (normalized === "::" || normalized === "::1") return false;
+  if (normalized.startsWith("fc") || normalized.startsWith("fd")) return false;
+  if (/^fe[89ab]/.test(normalized)) return false;
+  if (normalized.startsWith("2001:db8")) return false;
+  return true;
+}
+
+function isPublicIpAddress(address: string): boolean {
+  const version = isIP(address);
+  if (version === 4) {
+    return isPublicIpv4(address);
+  }
+  if (version === 6) {
+    return isPublicIpv6(address);
+  }
+  return false;
+}
+
+async function isPublicHostname(hostname: string): Promise<boolean> {
+  const normalized = hostname.toLowerCase();
+  if (
+    normalized === "localhost" ||
+    normalized.endsWith(".localhost") ||
+    normalized.endsWith(".local") ||
+    normalized.endsWith(".internal") ||
+    normalized.endsWith(".home.arpa")
+  ) {
+    return false;
+  }
+
+  const version = isIP(hostname);
+  if (version) {
+    return isPublicIpAddress(hostname);
+  }
+
+  try {
+    const records = await lookup(hostname, { all: true, verbatim: true });
+    return records.length > 0 && records.every((record) => isPublicIpAddress(record.address));
+  } catch {
+    return false;
+  }
+}
+
+async function resolvePublicRemoteAssetUrl(url: string): Promise<string> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new InvalidExportAssetUrlError(url);
+  }
+
+  if (!["https:", "http:"].includes(parsed.protocol)) {
+    throw new InvalidExportAssetUrlError(url);
+  }
+  if (parsed.username || parsed.password) {
+    throw new InvalidExportAssetUrlError(url);
+  }
+  if (parsed.port && !["80", "443"].includes(parsed.port)) {
+    throw new InvalidExportAssetUrlError(url);
+  }
+  if (!(await isPublicHostname(parsed.hostname))) {
+    throw new InvalidExportAssetUrlError(url);
+  }
+
+  return parsed.toString();
+}
+
+async function resolveHtmlExportAssetUrl(
+  url: string,
+  options: ExportAssetUrlOptions
+): Promise<string> {
+  if (url.startsWith("data:")) {
+    return url;
+  }
+
+  try {
+    return resolveExportAssetUrl(url, options);
+  } catch (error) {
+    if (url.startsWith("/")) {
+      throw error;
+    }
+  }
+
+  return resolvePublicRemoteAssetUrl(url);
+}
+
+async function fetchImageResponse(
+  url: string,
+  options: ExportAssetUrlOptions,
+  redirects = 0
+): Promise<Response> {
+  const response = await fetch(url, { redirect: "manual" });
+  if (
+    response.status >= 300 &&
+    response.status < 400 &&
+    response.headers.has("location")
+  ) {
+    if (redirects >= MAX_ASSET_REDIRECTS) {
+      throw new Error("Too many redirects while fetching export image.");
+    }
+
+    const nextUrl = new URL(response.headers.get("location")!, url).toString();
+    const validatedNextUrl = await resolveHtmlExportAssetUrl(nextUrl, options);
+    return fetchImageResponse(validatedNextUrl, options, redirects + 1);
+  }
+
+  return response;
+}
+
+async function responseToDataUrl(response: Response): Promise<string> {
   if (!response.ok) {
     throw new Error(`Failed to fetch image: ${response.status}`);
   }
@@ -136,6 +269,113 @@ async function imageUrlToData(url: string, options: ExportAssetUrlOptions): Prom
   const buffer = Buffer.from(await response.arrayBuffer());
   const b64 = buffer.toString("base64");
   return `data:${contentType};base64,${b64}`;
+}
+
+async function imageUrlToData(url: string, options: ExportAssetUrlOptions): Promise<string> {
+  if (url.startsWith("data:")) return url;
+  const resolved = resolveExportAssetUrl(url, options);
+  const response = await fetchImageResponse(resolved, options);
+  return responseToDataUrl(response);
+}
+
+async function htmlAssetUrlToData(url: string, options: ExportAssetUrlOptions): Promise<string> {
+  if (url.startsWith("data:")) return url;
+  const resolved = await resolveHtmlExportAssetUrl(url, options);
+  const response = await fetchImageResponse(resolved, options);
+  return responseToDataUrl(response);
+}
+
+async function inlineCssAssetUrls(
+  css: string,
+  options: ExportAssetUrlOptions,
+  cache: Map<string, Promise<string>>
+): Promise<string> {
+  const matches = Array.from(css.matchAll(CSS_URL_PATTERN));
+  if (matches.length === 0) {
+    return css;
+  }
+
+  let output = "";
+  let lastIndex = 0;
+  for (const match of matches) {
+    const [fullMatch, quote, rawValue] = match;
+    const start = match.index ?? 0;
+    const end = start + fullMatch.length;
+    output += css.slice(lastIndex, start);
+
+    const candidate = rawValue.trim();
+    if (!candidate || candidate.startsWith("#") || candidate.startsWith("data:")) {
+      output += fullMatch;
+      lastIndex = end;
+      continue;
+    }
+
+    let dataPromise = cache.get(candidate);
+    if (!dataPromise) {
+      dataPromise = htmlAssetUrlToData(candidate, options);
+      cache.set(candidate, dataPromise);
+    }
+    const dataUrl = await dataPromise;
+    const wrapped = quote ? `${quote}${dataUrl}${quote}` : `"${dataUrl}"`;
+    output += `url(${wrapped})`;
+    lastIndex = end;
+  }
+
+  output += css.slice(lastIndex);
+  return output;
+}
+
+export async function inlineHtmlExportAssetUrls(
+  html: string,
+  options: ExportAssetUrlOptions
+): Promise<string> {
+  const cache = new Map<string, Promise<string>>();
+  const rewriter = new HTMLRewriter()
+    .on("img", {
+      async element(element) {
+        const src = element.getAttribute("src");
+        if (!src || src.startsWith("data:")) {
+          return;
+        }
+
+        let dataPromise = cache.get(src);
+        if (!dataPromise) {
+          dataPromise = htmlAssetUrlToData(src, options);
+          cache.set(src, dataPromise);
+        }
+        element.setAttribute("src", await dataPromise);
+      },
+    })
+    .on("image", {
+      async element(element) {
+        for (const attr of ["href", "xlink:href"]) {
+          const value = element.getAttribute(attr);
+          if (!value || value.startsWith("data:")) {
+            continue;
+          }
+
+          let dataPromise = cache.get(value);
+          if (!dataPromise) {
+            dataPromise = htmlAssetUrlToData(value, options);
+            cache.set(value, dataPromise);
+          }
+          element.setAttribute(attr, await dataPromise);
+        }
+      },
+    })
+    .on("[style]", {
+      async element(element) {
+        const style = element.getAttribute("style");
+        if (!style || !style.includes("url(")) {
+          return;
+        }
+
+        element.setAttribute("style", await inlineCssAssetUrls(style, options, cache));
+      },
+    });
+
+  const transformed = rewriter.transform(new Response(html));
+  return transformed.text();
 }
 
 function svgToDataUrl(svg: string): string {
@@ -704,8 +944,9 @@ async function applyDashPatches(buffer: ArrayBuffer, dashPatches: DashPatch[]): 
   return zip.generateAsync({ type: "uint8array" });
 }
 
-async function renderHtmlSlide(html: string): Promise<string> {
-  const buffer = await renderHtmlToPng(html, {
+async function renderHtmlSlide(html: string, assetUrlOptions: ExportAssetUrlOptions): Promise<string> {
+  const inlinedHtml = await inlineHtmlExportAssetUrls(html, assetUrlOptions);
+  const buffer = await renderHtmlToPng(inlinedHtml, {
     width: SLIDE_PIXEL_SIZE.width,
     height: SLIDE_PIXEL_SIZE.height,
   });
@@ -740,7 +981,7 @@ export async function exportDeckToPptx(
     const pptxSlide = pptx.addSlide();
 
     if (!slide.source) {
-      const data = await renderHtmlSlide(slide.html || "");
+      const data = await renderHtmlSlide(slide.html || "", assetUrlOptions);
       await addBackgroundImage(pptxSlide, data);
       continue;
     }
