@@ -2,7 +2,7 @@
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--overlay-bg);
   z-index: 100;
   animation: drawer-fade-in 200ms ease;
 }
@@ -130,6 +130,13 @@
 .mobile-drawer-btn:disabled:hover {
   background: var(--panel-bg);
   border-color: var(--panel-border-strong);
+}
+
+.mobile-drawer-theme {
+  padding: 12px 16px;
+  border-top: 1px solid var(--panel-border);
+  display: flex;
+  justify-content: center;
 }
 
 /* Mobile menu toggle button - shown in main app */

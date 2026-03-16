@@ -14,6 +14,7 @@ import { useChatGeneration } from "./hooks/useChatGeneration";
 import { useImportExport } from "./hooks/useImportExport";
 import { useDeckSync } from "./hooks/useDeckSync";
 import { useFocusReturn } from "./hooks/useFocusReturn";
+import { useTheme } from "./hooks/useTheme";
 import { MODEL_OPTIONS } from "./models";
 import { loadPersistedState, savePersistedState } from "./storage";
 import "./App.css";
@@ -107,6 +108,9 @@ export default function App() {
   // Mobile drawer state
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const { saveFocus, restoreFocus } = useFocusReturn();
+
+  // Theme
+  const { theme, cycleTheme } = useTheme();
 
   // Screen reader announcements
   const [announcement, setAnnouncement] = useState("");
@@ -230,6 +234,8 @@ export default function App() {
         onImport={handleImportClick}
         isImporting={isImporting}
         isExporting={isExporting}
+        theme={theme}
+        onThemeCycle={cycleTheme}
       />
       <nav aria-label="Slide thumbnails">
         <ThumbnailPanel
@@ -244,6 +250,8 @@ export default function App() {
           onImport={handleImportClick}
           isImporting={isImporting}
           isExporting={isExporting}
+          theme={theme}
+          onThemeCycle={cycleTheme}
         />
       </nav>
       <ImportProgress progress={importProgress} onCancel={handleImportCancel} />

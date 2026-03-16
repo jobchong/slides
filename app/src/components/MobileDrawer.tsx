@@ -1,6 +1,8 @@
 import { useRef, useEffect } from "react";
 import type { Slide } from "../types";
+import type { Theme } from "../hooks/useTheme";
 import { SlideThumbnail } from "./SlideThumbnail";
+import { ThemeToggle } from "./ThemeToggle";
 import "./MobileDrawer.css";
 
 interface MobileDrawerProps {
@@ -17,6 +19,8 @@ interface MobileDrawerProps {
   onImport: () => void;
   isImporting: boolean;
   isExporting: boolean;
+  theme: Theme;
+  onThemeCycle: () => void;
 }
 
 export function MobileDrawer({
@@ -33,6 +37,8 @@ export function MobileDrawer({
   onImport,
   isImporting,
   isExporting,
+  theme,
+  onThemeCycle,
 }: MobileDrawerProps) {
   const drawerRef = useRef<HTMLDivElement>(null);
   const canDelete = slides.length > 1;
@@ -157,6 +163,9 @@ export function MobileDrawer({
           >
             {isImporting ? "Importing..." : "Import"}
           </button>
+        </div>
+        <div className="mobile-drawer-theme">
+          <ThemeToggle theme={theme} onCycle={onThemeCycle} />
         </div>
       </div>
     </div>

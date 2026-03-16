@@ -7,8 +7,8 @@
   aspect-ratio: 16 / 9;
   overflow: hidden;
   border-radius: 8px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
-  background: #ffffff;
+  box-shadow: 0 4px 24px var(--shadow-color);
+  background: var(--slide-bg);
 }
 
 .slide > div {
@@ -21,14 +21,15 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.8);
+  background: var(--slide-bg);
+  opacity: 0.9;
 }
 
 .slide-loading-spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid #e0e0e0;
-  border-top-color: #666;
+  border: 3px solid var(--spinner-track);
+  border-top-color: var(--spinner-fill);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -39,7 +40,7 @@
   left: 50%;
   transform: translateX(-50%);
   font-size: 14px;
-  color: #666;
+  color: var(--muted);
   font-weight: 500;
 }
 

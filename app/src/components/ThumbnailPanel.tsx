@@ -1,6 +1,8 @@
 import { useRef, useEffect } from "react";
 import type { Slide } from "../types";
+import type { Theme } from "../hooks/useTheme";
 import { SlideThumbnail } from "./SlideThumbnail";
+import { ThemeToggle } from "./ThemeToggle";
 import "./ThumbnailPanel.css";
 
 interface ThumbnailPanelProps {
@@ -15,6 +17,8 @@ interface ThumbnailPanelProps {
   onImport: () => void;
   isImporting: boolean;
   isExporting: boolean;
+  theme: Theme;
+  onThemeCycle: () => void;
 }
 
 export function ThumbnailPanel({
@@ -29,6 +33,8 @@ export function ThumbnailPanel({
   onImport,
   isImporting,
   isExporting,
+  theme,
+  onThemeCycle,
 }: ThumbnailPanelProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const canDelete = slides.length > 1;
@@ -117,6 +123,9 @@ export function ThumbnailPanel({
         >
           {isImporting ? "Importing..." : "Import PPTX"}
         </button>
+        <div className="thumbnail-panel-theme">
+          <ThemeToggle theme={theme} onCycle={onThemeCycle} />
+        </div>
       </div>
     </div>
   );

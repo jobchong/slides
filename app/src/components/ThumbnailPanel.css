@@ -90,3 +90,9 @@
     transform: rotate(360deg);
   }
 }
+
+.thumbnail-panel-theme {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--panel-border);
+}
