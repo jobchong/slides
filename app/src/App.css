@@ -38,6 +38,12 @@
   width: min(800px, calc(100% - 48px));
 }
 
+/* Skip link targets - no outline when focused via skip link */
+.app-slide-container:focus,
+.app-chat:focus {
+  outline: none;
+}
+
 /* Mobile responsive styles */
 @media (max-width: 768px) {
   .app-main {

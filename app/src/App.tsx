@@ -6,11 +6,14 @@ import { ThumbnailPanel } from "./components/ThumbnailPanel";
 import { MobileDrawer } from "./components/MobileDrawer";
 import { SlideNavigation } from "./components/SlideNavigation";
 import { ImportProgress } from "./components/ImportProgress";
+import { SkipLink } from "./components/SkipLink";
+import { Announcer } from "./components/Announcer";
 import { useSlideNavigation } from "./hooks/useSlideNavigation";
 import { useSlideOperations } from "./hooks/useSlideOperations";
 import { useChatGeneration } from "./hooks/useChatGeneration";
 import { useImportExport } from "./hooks/useImportExport";
 import { useDeckSync } from "./hooks/useDeckSync";
+import { useFocusReturn } from "./hooks/useFocusReturn";
 import { MODEL_OPTIONS } from "./models";
 import { loadPersistedState, savePersistedState } from "./storage";
 import "./App.css";
@@ -103,6 +106,20 @@ export default function App() {
 
   // Mobile drawer state
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
+  const { saveFocus, restoreFocus } = useFocusReturn();
+
+  // Screen reader announcements
+  const [announcement, setAnnouncement] = useState("");
+
+  const handleOpenDrawer = () => {
+    saveFocus();
+    setIsMobileDrawerOpen(true);
+  };
+
+  const handleCloseDrawer = () => {
+    setIsMobileDrawerOpen(false);
+    restoreFocus();
+  };
 
   // Deck sync hook
   const { handleNewDeck } = useDeckSync({
@@ -146,8 +163,40 @@ export default function App() {
   };
   const handleErrorRetry = error ? retryLastMessage : undefined;
 
+  // Announce loading state changes
+  useEffect(() => {
+    if (isLoading) {
+      setAnnouncement("Generating slide content...");
+    }
+  }, [isLoading]);
+
+  // Announce when generation completes
+  useEffect(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.role === "assistant" && lastMessage.content === "Done.") {
+      setAnnouncement("Slide updated successfully.");
+    }
+  }, [messages]);
+
+  // Announce errors
+  useEffect(() => {
+    if (displayError) {
+      setAnnouncement(`Error: ${displayError}`);
+    }
+  }, [displayError]);
+
+  // Announce slide changes
+  useEffect(() => {
+    if (slides.length > 1) {
+      setAnnouncement(`Slide ${currentSlideIndex + 1} of ${slides.length}`);
+    }
+  }, [currentSlideIndex, slides.length]);
+
   return (
     <div className="app">
+      <SkipLink targetId="main-content">Skip to slide</SkipLink>
+      <SkipLink targetId="chat-input">Skip to chat</SkipLink>
+      <Announcer message={announcement} />
       <input
         ref={fileInputRef}
         type="file"
@@ -158,7 +207,7 @@ export default function App() {
       />
       <button
         className="mobile-menu-toggle"
-        onClick={() => setIsMobileDrawerOpen(true)}
+        onClick={handleOpenDrawer}
         aria-label="Open slide navigation"
       >
         <span className="mobile-menu-icon" aria-hidden="true">
@@ -169,7 +218,7 @@ export default function App() {
       </button>
       <MobileDrawer
         isOpen={isMobileDrawerOpen}
-        onClose={() => setIsMobileDrawerOpen(false)}
+        onClose={handleCloseDrawer}
         slides={slides}
         currentIndex={currentSlideIndex}
         onSelect={handleGoToSlide}
@@ -199,7 +248,13 @@ export default function App() {
       </nav>
       <ImportProgress progress={importProgress} onCancel={handleImportCancel} />
       <main className="app-main">
-        <div className="app-slide-container" role="region" aria-label="Current slide">
+        <div
+          id="main-content"
+          className="app-slide-container"
+          role="region"
+          aria-label="Current slide"
+          tabIndex={-1}
+        >
           <SlideView html={currentSlide.html} isLoading={isLoading} />
         </div>
         {slides.length > 1 && (
@@ -210,7 +265,7 @@ export default function App() {
             onNext={handleNextSlide}
           />
         )}
-        <div className="app-chat" role="region" aria-label="Chat interface">
+        <div id="chat-input" className="app-chat" role="region" aria-label="Chat interface" tabIndex={-1}>
           <ChatInput
             messages={messages}
             slideHtml={currentSlide.html}

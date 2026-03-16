@@ -1,0 +1,30 @@
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: 16px;
+  z-index: 1000;
+  padding: 12px 20px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  border-radius: 0 0 8px 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  transition: top 150ms ease;
+}
+
+.skip-link:focus {
+  top: 0;
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
+/* Stack multiple skip links */
+.skip-link + .skip-link {
+  left: 160px;
+}
+
+.skip-link + .skip-link + .skip-link {
+  left: 304px;
+}
