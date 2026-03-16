@@ -38,3 +38,21 @@
   min-width: 60px;
   text-align: center;
 }
+
+/* Mobile responsive styles */
+@media (max-width: 768px) {
+  .slide-navigation {
+    padding: 8px 0;
+    gap: 12px;
+  }
+
+  .slide-navigation-btn {
+    min-height: 48px;
+    padding: 12px 20px;
+    font-size: 15px;
+  }
+
+  .slide-navigation-indicator {
+    font-size: 15px;
+  }
+}

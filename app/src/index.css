@@ -35,3 +35,11 @@ body {
 #root {
   min-height: 100vh;
 }
+
+/* Responsive typography */
+@media (max-width: 768px) {
+  body {
+    font-size: 16px;
+    -webkit-text-size-adjust: 100%;
+  }
+}

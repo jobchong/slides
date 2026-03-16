@@ -37,3 +37,25 @@
 .app-chat > * {
   width: min(800px, calc(100% - 48px));
 }
+
+/* Mobile responsive styles */
+@media (max-width: 768px) {
+  .app-main {
+    padding: 16px;
+    padding-top: 72px; /* Space for mobile menu button */
+    padding-bottom: 140px;
+  }
+
+  .app-slide-container {
+    min-height: 280px;
+  }
+
+  .app-chat {
+    bottom: 16px;
+    left: 0;
+  }
+
+  .app-chat > * {
+    width: calc(100% - 32px);
+  }
+}

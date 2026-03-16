@@ -3,6 +3,7 @@ import type { Message, Slide, SlideSource } from "./types";
 import { SlideView } from "./components/SlideView";
 import { ChatInput } from "./components/ChatInput";
 import { ThumbnailPanel } from "./components/ThumbnailPanel";
+import { MobileDrawer } from "./components/MobileDrawer";
 import { SlideNavigation } from "./components/SlideNavigation";
 import { ImportProgress } from "./components/ImportProgress";
 import { useSlideNavigation } from "./hooks/useSlideNavigation";
@@ -98,6 +99,9 @@ export default function App() {
     setMessages: () => setMessages([]),
   });
 
+  // Mobile drawer state
+  const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
+
   // Deck sync hook
   const { handleNewDeck } = useDeckSync({
     slides,
@@ -147,6 +151,32 @@ export default function App() {
         style={{ display: "none" }}
         onChange={handleFileSelect}
         aria-hidden="true"
+      />
+      <button
+        className="mobile-menu-toggle"
+        onClick={() => setIsMobileDrawerOpen(true)}
+        aria-label="Open slide navigation"
+      >
+        <span className="mobile-menu-icon" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </span>
+      </button>
+      <MobileDrawer
+        isOpen={isMobileDrawerOpen}
+        onClose={() => setIsMobileDrawerOpen(false)}
+        slides={slides}
+        currentIndex={currentSlideIndex}
+        onSelect={handleGoToSlide}
+        onAdd={handleAddSlide}
+        onDelete={handleDeleteSlide}
+        onDuplicate={handleDuplicateSlide}
+        onNewDeck={handleNewDeck}
+        onExport={handleExportClick}
+        onImport={handleImportClick}
+        isImporting={isImporting}
+        isExporting={isExporting}
       />
       <nav aria-label="Slide thumbnails">
         <ThumbnailPanel
