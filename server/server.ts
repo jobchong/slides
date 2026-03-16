@@ -14,6 +14,7 @@ import type { ImportOptions } from "./import/types";
 import { logError, logInfo, logWarn, preview } from "./logger";
 import { createDefaultDeckStore } from "./deck-store";
 import { exportDeckToPptx, InvalidExportAssetUrlError } from "./export";
+import { createDiagramStreamGate } from "./diagram-stream";
 import { resolveModelOutput } from "./model-output";
 import { rateLimiter, isRateLimitedEndpoint } from "./rate-limit";
 import type { DeckState, Message, Slide } from "../app/src/types";
@@ -416,23 +417,22 @@ async function handleGenerateStream(req: Request): Promise<Response> {
       async start(controller) {
         try {
           // Accumulate response to detect diagrams
-          let accumulated = "";
+          const gate = createDiagramStreamGate();
 
           for await (const chunk of generateSlideStream(
             messages,
             currentHtml,
             selectedModel
           )) {
-            accumulated += chunk;
             totalLength += chunk.length;
 
-            // Stream chunks for non-diagram content (for responsive UI)
-            // If it looks like a diagram is starting, buffer everything
-            // Check for partial tag "<diagram" (without closing >) to catch early
-            if (!accumulated.includes("<diagram")) {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            const nextChunk = gate.append(chunk);
+            if (nextChunk) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(nextChunk)}\n\n`));
             }
           }
+
+          const { accumulated, remainder, diagramDetected } = gate.finalize();
 
           // After streaming completes, check if it's a diagram
           const resolved = resolveModelOutput(accumulated);
@@ -440,11 +440,13 @@ async function handleGenerateStream(req: Request): Promise<Response> {
           if (resolved.type === "diagram") {
             // Send the rendered HTML as a single chunk
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(resolved.html)}\n\n`));
-          } else if (accumulated.includes("<diagram>")) {
-            // We buffered diagram content but parsing failed - send raw
+          } else if (diagramDetected) {
+            // We buffered content because it resembled a diagram tag; parsing did not produce a diagram,
+            // so fall back to the raw model output.
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(accumulated)}\n\n`));
+          } else if (remainder) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(remainder)}\n\n`));
           }
-          // For non-diagram content, chunks were already sent
 
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           controller.close();
