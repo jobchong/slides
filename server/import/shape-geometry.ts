@@ -34,10 +34,16 @@ const CHEVRON_DEFAULTS = {
   adj: 50000,
 };
 
+const HOME_PLATE_DEFAULTS = {
+  adj: 25000,
+};
+
 const HEXAGON_DEFAULTS = {
   adj: 25000,
   vf: 115470,
 };
+
+const OCTAGON_INSET_RATIO = 0.292893;
 
 const PENTAGON_RATIOS = {
   shoulderY: 0.381966,
@@ -109,13 +115,24 @@ export function buildPresetShapeGeometry(
     case "diamond":
       return buildDiamondGeometry(size, options);
     case "triangle":
+    case "upTriangle":
       return buildTriangleGeometry(size, options);
+    case "downTriangle":
+      return buildDownTriangleGeometry(size, options);
+    case "leftTriangle":
+      return buildLeftTriangleGeometry(size, options);
+    case "rightTriangle":
+      return buildPointRightTriangleGeometry(size, options);
     case "rtTriangle":
-      return buildRightTriangleGeometry(size, options);
+      return buildRightAngleTriangleGeometry(size, options);
     case "parallelogram":
       return buildParallelogramGeometry(size, adjustments, options);
     case "trapezoid":
       return buildTrapezoidGeometry(size, adjustments, options);
+    case "homePlate":
+      return buildHomePlateGeometry(size, adjustments, options);
+    case "octagon":
+      return buildOctagonGeometry(size, options);
     case "pentagon":
       return buildPentagonGeometry(size, options);
     case "chevron":
@@ -162,7 +179,7 @@ function buildTriangleGeometry(
   );
 }
 
-function buildRightTriangleGeometry(
+function buildRightAngleTriangleGeometry(
   size: GeometrySize,
   options: PresetShapeGeometryOptions
 ): PresetShapeGeometry {
@@ -172,6 +189,54 @@ function buildRightTriangleGeometry(
     [
       { x: 0, y: 0 },
       { x: width, y: height },
+      { x: 0, y: height },
+    ],
+    options
+  );
+}
+
+function buildDownTriangleGeometry(
+  size: GeometrySize,
+  options: PresetShapeGeometryOptions
+): PresetShapeGeometry {
+  const { width, height } = size;
+  return buildPolygonGeometry(
+    size,
+    [
+      { x: 0, y: 0 },
+      { x: width, y: 0 },
+      { x: width / 2, y: height },
+    ],
+    options
+  );
+}
+
+function buildLeftTriangleGeometry(
+  size: GeometrySize,
+  options: PresetShapeGeometryOptions
+): PresetShapeGeometry {
+  const { width, height } = size;
+  return buildPolygonGeometry(
+    size,
+    [
+      { x: width, y: 0 },
+      { x: width, y: height },
+      { x: 0, y: height / 2 },
+    ],
+    options
+  );
+}
+
+function buildPointRightTriangleGeometry(
+  size: GeometrySize,
+  options: PresetShapeGeometryOptions
+): PresetShapeGeometry {
+  const { width, height } = size;
+  return buildPolygonGeometry(
+    size,
+    [
+      { x: 0, y: 0 },
+      { x: width, y: height / 2 },
       { x: 0, y: height },
     ],
     options
@@ -215,6 +280,52 @@ function buildTrapezoidGeometry(
       { x: width - inset, y: 0 },
       { x: width, y: height },
       { x: 0, y: height },
+    ],
+    options
+  );
+}
+
+function buildHomePlateGeometry(
+  size: GeometrySize,
+  adjustments: ShapeAdjustments,
+  options: PresetShapeGeometryOptions
+): PresetShapeGeometry {
+  const { width, height } = size;
+  const adj = clamp(adjustments.adj ?? HOME_PLATE_DEFAULTS.adj, 0, 50000);
+  const bodyX = width - (width * adj) / 100000;
+
+  return buildPolygonGeometry(
+    size,
+    [
+      { x: 0, y: 0 },
+      { x: bodyX, y: 0 },
+      { x: width, y: height / 2 },
+      { x: bodyX, y: height },
+      { x: 0, y: height },
+    ],
+    options
+  );
+}
+
+function buildOctagonGeometry(
+  size: GeometrySize,
+  options: PresetShapeGeometryOptions
+): PresetShapeGeometry {
+  const { width, height } = size;
+  const insetX = width * OCTAGON_INSET_RATIO;
+  const insetY = height * OCTAGON_INSET_RATIO;
+
+  return buildPolygonGeometry(
+    size,
+    [
+      { x: insetX, y: 0 },
+      { x: width - insetX, y: 0 },
+      { x: width, y: insetY },
+      { x: width, y: height - insetY },
+      { x: width - insetX, y: height },
+      { x: insetX, y: height },
+      { x: 0, y: height - insetY },
+      { x: 0, y: insetY },
     ],
     options
   );

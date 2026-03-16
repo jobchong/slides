@@ -21,9 +21,34 @@ describe("preset shape geometry", () => {
         expectedPath: "M 100 0 L 200 100 L 0 100 Z",
       },
       {
+        shapeType: "upTriangle",
+        size: { width: 200, height: 100 },
+        expectedPath: "M 100 0 L 200 100 L 0 100 Z",
+      },
+      {
+        shapeType: "downTriangle",
+        size: { width: 200, height: 100 },
+        expectedPath: "M 0 0 L 200 0 L 100 100 Z",
+      },
+      {
+        shapeType: "leftTriangle",
+        size: { width: 200, height: 100 },
+        expectedPath: "M 200 0 L 200 100 L 0 50 Z",
+      },
+      {
+        shapeType: "rightTriangle",
+        size: { width: 200, height: 100 },
+        expectedPath: "M 0 0 L 200 50 L 0 100 Z",
+      },
+      {
         shapeType: "rtTriangle",
         size: { width: 200, height: 100 },
         expectedPath: "M 0 0 L 200 100 L 0 100 Z",
+      },
+      {
+        shapeType: "octagon",
+        size: { width: 100, height: 100 },
+        expectedPath: "M 29.29 0 L 70.71 0 L 100 29.29 L 100 70.71 L 70.71 100 L 29.29 100 L 0 70.71 L 0 29.29 Z",
       },
     ] as const;
 
@@ -47,6 +72,20 @@ describe("preset shape geometry", () => {
     const geometry = buildPresetShapeGeometry("trapezoid", { width: 200, height: 100 }, adjustments);
 
     expect(geometry?.svgPath).toBe("M 20 0 L 180 0 L 200 100 L 0 100 Z");
+  });
+
+  test("uses preset adjustments for home plates", () => {
+    const adjustments = parsePresetAdjustments(`
+      <a:prstGeom prst="homePlate">
+        <a:avLst>
+          <a:gd name="adj" fmla="val 40000"/>
+        </a:avLst>
+      </a:prstGeom>
+    `);
+
+    const geometry = buildPresetShapeGeometry("homePlate", { width: 200, height: 100 }, adjustments);
+
+    expect(geometry?.svgPath).toBe("M 0 0 L 120 0 L 200 50 L 120 100 L 0 100 Z");
   });
 
   test("mirrors asymmetrical presets when flips are present", () => {
