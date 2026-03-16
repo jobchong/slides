@@ -46,6 +46,26 @@ describe("preset shape geometry", () => {
         expectedPath: "M 0 0 L 200 100 L 0 100 Z",
       },
       {
+        shapeType: "upArrow",
+        size: { width: 200, height: 100 },
+        expectedPath: "M 0 50 L 100 0 L 200 50 L 150 50 L 150 100 L 50 100 L 50 50 Z",
+      },
+      {
+        shapeType: "downArrow",
+        size: { width: 200, height: 100 },
+        expectedPath: "M 50 0 L 150 0 L 150 50 L 200 50 L 100 100 L 0 50 L 50 50 Z",
+      },
+      {
+        shapeType: "leftArrow",
+        size: { width: 200, height: 100 },
+        expectedPath: "M 50 0 L 200 0 L 200 25 L 50 25 L 0 50 L 50 75 L 200 75 L 200 100 L 50 100 Z",
+      },
+      {
+        shapeType: "rightArrow",
+        size: { width: 200, height: 100 },
+        expectedPath: "M 0 0 L 150 0 L 150 25 L 200 50 L 150 75 L 150 100 L 0 100 L 0 75 L 0 25 Z",
+      },
+      {
         shapeType: "octagon",
         size: { width: 100, height: 100 },
         expectedPath: "M 29.29 0 L 70.71 0 L 100 29.29 L 100 70.71 L 70.71 100 L 29.29 100 L 0 70.71 L 0 29.29 Z",
@@ -88,6 +108,21 @@ describe("preset shape geometry", () => {
     expect(geometry?.svgPath).toBe("M 0 0 L 120 0 L 200 50 L 120 100 L 0 100 Z");
   });
 
+  test("uses preset adjustments for arrows", () => {
+    const adjustments = parsePresetAdjustments(`
+      <a:prstGeom prst="rightArrow">
+        <a:avLst>
+          <a:gd name="adj1" fmla="val 30000"/>
+          <a:gd name="adj2" fmla="val 20000"/>
+        </a:avLst>
+      </a:prstGeom>
+    `);
+
+    const geometry = buildPresetShapeGeometry("rightArrow", { width: 200, height: 100 }, adjustments);
+
+    expect(geometry?.svgPath).toBe("M 0 0 L 180 0 L 180 35 L 200 50 L 180 65 L 180 100 L 0 100 L 0 65 L 0 35 Z");
+  });
+
   test("mirrors asymmetrical presets when flips are present", () => {
     const geometry = buildPresetShapeGeometry(
       "parallelogram",
@@ -97,6 +132,17 @@ describe("preset shape geometry", () => {
     );
 
     expect(geometry?.svgPath).toBe("M 150 0 L 0 0 L 50 100 L 200 100 Z");
+  });
+
+  test("mirrors arrow presets when flips are present", () => {
+    const geometry = buildPresetShapeGeometry(
+      "upArrow",
+      { width: 200, height: 100 },
+      {},
+      { flipV: true }
+    );
+
+    expect(geometry?.svgPath).toBe("M 0 50 L 100 100 L 200 50 L 150 50 L 150 0 L 50 0 L 50 50 Z");
   });
 
   test("builds pentagons with stable regular-polygon ratios", () => {
@@ -160,5 +206,67 @@ describe("preset shape parser integration", () => {
     });
 
     expect(html).toContain('<path d="M 150 0 L 0 0 L 50 100 L 200 100 Z"');
+  });
+
+  test("renders custom SVG for preset arrows", () => {
+    resetElementIdCounter();
+
+    const theme = getDefaultTheme();
+    const slideSize: SlideSize = { width: 1000, height: 1000 };
+    const slideXml = `
+      <p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+        <p:cSld>
+          <p:spTree>
+            <p:nvGrpSpPr>
+              <p:cNvPr id="0" name=""/>
+              <p:cNvGrpSpPr/>
+              <p:nvPr/>
+            </p:nvGrpSpPr>
+            <p:grpSpPr/>
+            <p:sp>
+              <p:nvSpPr>
+                <p:cNvPr id="2" name="Right Arrow 1"/>
+                <p:cNvSpPr/>
+                <p:nvPr/>
+              </p:nvSpPr>
+              <p:spPr>
+                <a:xfrm>
+                  <a:off x="100" y="200"/>
+                  <a:ext cx="200" cy="100"/>
+                </a:xfrm>
+                <a:prstGeom prst="rightArrow">
+                  <a:avLst>
+                    <a:gd name="adj1" fmla="val 30000"/>
+                    <a:gd name="adj2" fmla="val 20000"/>
+                  </a:avLst>
+                </a:prstGeom>
+                <a:solidFill>
+                  <a:srgbClr val="00AAFF"/>
+                </a:solidFill>
+              </p:spPr>
+            </p:sp>
+          </p:spTree>
+        </p:cSld>
+      </p:sld>
+    `;
+
+    const extractedSlide = parseSlide(slideXml, 0, slideSize, theme, new Map());
+    expect(extractedSlide.elements).toHaveLength(1);
+    expect(extractedSlide.elements[0].shape?.svgPath).toBe(
+      "M 0 0 L 180 0 L 180 35 L 200 50 L 180 65 L 180 100 L 0 100 L 0 65 L 0 35 Z"
+    );
+
+    const editable = convertToEditable(extractedSlide.elements[0], theme);
+    expect(editable?.shape?.kind).toBe("custom");
+
+    const html = renderSlideHtml({
+      background: convertBackground(extractedSlide.background),
+      elements: editable ? [editable] : [],
+      import: { slideIndex: 0 },
+    });
+
+    expect(html).toContain(
+      '<path d="M 0 0 L 180 0 L 180 35 L 200 50 L 180 65 L 180 100 L 0 100 L 0 65 L 0 35 Z"'
+    );
   });
 });

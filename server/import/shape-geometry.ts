@@ -17,6 +17,8 @@ export type PresetShapeGeometry = {
   lineEnd?: Point;
 };
 
+type ArrowDirection = "up" | "down" | "left" | "right";
+
 type PresetShapeGeometryOptions = {
   flipH?: boolean;
   flipV?: boolean;
@@ -36,6 +38,11 @@ const CHEVRON_DEFAULTS = {
 
 const HOME_PLATE_DEFAULTS = {
   adj: 25000,
+};
+
+const ARROW_DEFAULTS = {
+  adj1: 50000,
+  adj2: 50000,
 };
 
 const HEXAGON_DEFAULTS = {
@@ -131,12 +138,20 @@ export function buildPresetShapeGeometry(
       return buildTrapezoidGeometry(size, adjustments, options);
     case "homePlate":
       return buildHomePlateGeometry(size, adjustments, options);
+    case "leftArrow":
+      return buildArrowGeometry("left", size, adjustments, options);
     case "octagon":
       return buildOctagonGeometry(size, options);
     case "pentagon":
       return buildPentagonGeometry(size, options);
     case "chevron":
       return buildChevronGeometry(size, adjustments, options);
+    case "rightArrow":
+      return buildArrowGeometry("right", size, adjustments, options);
+    case "upArrow":
+      return buildArrowGeometry("up", size, adjustments, options);
+    case "downArrow":
+      return buildArrowGeometry("down", size, adjustments, options);
     case "hexagon":
       return buildHexagonGeometry(size, adjustments, options);
     case "line":
@@ -305,6 +320,94 @@ function buildHomePlateGeometry(
     ],
     options
   );
+}
+
+function buildArrowGeometry(
+  direction: ArrowDirection,
+  size: GeometrySize,
+  adjustments: ShapeAdjustments,
+  options: PresetShapeGeometryOptions
+): PresetShapeGeometry {
+  const { width, height } = size;
+  const ss = Math.min(width, height);
+  const maxAdj2 = direction === "up" || direction === "down"
+    ? (100000 * height) / ss
+    : (100000 * width) / ss;
+  const shaftAdj = clamp(adjustments.adj1 ?? ARROW_DEFAULTS.adj1, 0, 100000);
+  const headAdj = clamp(adjustments.adj2 ?? ARROW_DEFAULTS.adj2, 0, maxAdj2);
+  const shaftHalfWidth = direction === "up" || direction === "down"
+    ? (width * shaftAdj) / 200000
+    : (height * shaftAdj) / 200000;
+  const shaftMin = direction === "up" || direction === "down"
+    ? width / 2 - shaftHalfWidth
+    : height / 2 - shaftHalfWidth;
+  const shaftMax = direction === "up" || direction === "down"
+    ? width / 2 + shaftHalfWidth
+    : height / 2 + shaftHalfWidth;
+  const headDepth = (ss * headAdj) / 100000;
+
+  switch (direction) {
+    case "up":
+      return buildPolygonGeometry(
+        size,
+        [
+          { x: 0, y: headDepth },
+          { x: width / 2, y: 0 },
+          { x: width, y: headDepth },
+          { x: shaftMax, y: headDepth },
+          { x: shaftMax, y: height },
+          { x: shaftMin, y: height },
+          { x: shaftMin, y: headDepth },
+        ],
+        options
+      );
+    case "down":
+      return buildPolygonGeometry(
+        size,
+        [
+          { x: shaftMin, y: 0 },
+          { x: shaftMax, y: 0 },
+          { x: shaftMax, y: height - headDepth },
+          { x: width, y: height - headDepth },
+          { x: width / 2, y: height },
+          { x: 0, y: height - headDepth },
+          { x: shaftMin, y: height - headDepth },
+        ],
+        options
+      );
+    case "left":
+      return buildPolygonGeometry(
+        size,
+        [
+          { x: headDepth, y: 0 },
+          { x: width, y: 0 },
+          { x: width, y: shaftMin },
+          { x: headDepth, y: shaftMin },
+          { x: 0, y: height / 2 },
+          { x: headDepth, y: shaftMax },
+          { x: width, y: shaftMax },
+          { x: width, y: height },
+          { x: headDepth, y: height },
+        ],
+        options
+      );
+    case "right":
+      return buildPolygonGeometry(
+        size,
+        [
+          { x: 0, y: 0 },
+          { x: width - headDepth, y: 0 },
+          { x: width - headDepth, y: shaftMin },
+          { x: width, y: height / 2 },
+          { x: width - headDepth, y: shaftMax },
+          { x: width - headDepth, y: height },
+          { x: 0, y: height },
+          { x: 0, y: shaftMax },
+          { x: 0, y: shaftMin },
+        ],
+        options
+      );
+  }
 }
 
 function buildOctagonGeometry(
