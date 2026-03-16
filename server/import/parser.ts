@@ -27,6 +27,7 @@ const DEFAULT_SLIDE_SIZE: SlideSize = {
   width: 9144000,
   height: 6858000,
 };
+const POINTS_TO_PX = 96 / 72;
 
 // Generate unique element IDs
 let elementIdCounter = 0;
@@ -477,7 +478,7 @@ function parseShape(
   const fill = parseFill(spPrXml, theme);
 
   // Parse stroke
-  let { stroke, strokeWidth, lineCap, lineHead, lineTail } = parseStroke(spPrXml, theme);
+  let { stroke, strokeWidth, strokeDasharray, lineCap, lineHead, lineTail } = parseStroke(spPrXml, theme);
   if (shapeType === "line" && (flipH || flipV)) {
     const tmp = lineHead;
     lineHead = lineTail;
@@ -528,6 +529,7 @@ function parseShape(
       fill,
       stroke,
       strokeWidth,
+      strokeDasharray,
       lineCap,
       lineHead,
       lineTail,
@@ -754,11 +756,12 @@ function parseStroke(
 ): {
   stroke?: string;
   strokeWidth?: number;
+  strokeDasharray?: string;
   lineCap?: ShapeData["lineCap"];
   lineHead?: ShapeData["lineHead"];
   lineTail?: ShapeData["lineTail"];
 } {
-  const lnMatch = xml.match(/<a:ln([^>]*)>([\s\S]*?)<\/a:ln>/);
+  const lnMatch = xml.match(/<a:ln(?=[\s>])([^>]*)>([\s\S]*?)<\/a:ln>/);
   if (!lnMatch) {
     return {};
   }
@@ -774,10 +777,12 @@ function parseStroke(
   // Parse width (in EMU)
   const widthMatch = lnAttrs.match(/w="(\d+)"/);
   const strokeWidth = widthMatch ? parseInt(widthMatch[1]) / EMU_PER_POINT : undefined;
+  const strokeWidthPx = (strokeWidth || 1) * POINTS_TO_PX;
 
   // Parse color
   const solidFillMatch = lnContent.match(/<a:solidFill>([\s\S]*?)<\/a:solidFill>/);
   const stroke = solidFillMatch ? resolveColor(solidFillMatch[1], theme) || undefined : undefined;
+  const strokeDasharray = parseStrokeDasharray(lnContent, strokeWidthPx);
 
   const capMatch = lnAttrs.match(/cap="([^"]+)"/);
   let lineCap: ShapeData["lineCap"];
@@ -792,7 +797,79 @@ function parseStroke(
   const lineHead = headMatch?.[1] === "oval" ? "oval" : undefined;
   const lineTail = tailMatch?.[1] === "oval" ? "oval" : undefined;
 
-  return { stroke, strokeWidth, lineCap, lineHead, lineTail };
+  return { stroke, strokeWidth, strokeDasharray, lineCap, lineHead, lineTail };
+}
+
+function parseStrokeDasharray(lnXml: string, strokeWidthPx: number): string | undefined {
+  const customDash = parseCustomDashPattern(lnXml, strokeWidthPx);
+  if (customDash) {
+    return customDash;
+  }
+
+  const presetMatch = lnXml.match(/<a:prstDash[^>]*val="([^"]+)"/);
+  if (!presetMatch) {
+    return undefined;
+  }
+
+  return buildPresetDashPattern(presetMatch[1], strokeWidthPx);
+}
+
+function parseCustomDashPattern(lnXml: string, strokeWidthPx: number): string | undefined {
+  const dashStopRegex = /<a:ds[^>]*d="([^"]+)"[^>]*sp="([^"]+)"/g;
+  const values: number[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = dashStopRegex.exec(lnXml)) !== null) {
+    values.push(
+      parsePositivePercentage(match[1]) * strokeWidthPx,
+      parsePositivePercentage(match[2]) * strokeWidthPx
+    );
+  }
+
+  if (values.length === 0) {
+    return undefined;
+  }
+
+  return formatDashPattern(values);
+}
+
+function buildPresetDashPattern(name: string, strokeWidthPx: number): string | undefined {
+  const ratios: Record<string, number[]> = {
+    dot: [1, 1],
+    dash: [3, 1],
+    lgDash: [8, 3],
+    dashDot: [3, 1, 1, 1],
+    lgDashDot: [8, 3, 1, 3],
+    lgDashDotDot: [8, 3, 1, 3, 1, 3],
+    sysDot: [1, 1],
+    sysDash: [3, 1],
+    sysDashDot: [3, 1, 1, 1],
+    sysDashDotDot: [3, 1, 1, 1, 1, 1],
+  };
+
+  const pattern = ratios[name];
+  if (!pattern) {
+    return undefined;
+  }
+
+  return formatDashPattern(pattern.map(value => value * strokeWidthPx));
+}
+
+function parsePositivePercentage(value: string): number {
+  const trimmed = value.trim();
+  if (trimmed.endsWith("%")) {
+    return parseFloat(trimmed) / 100;
+  }
+  return parseFloat(trimmed) / 100000;
+}
+
+function formatDashPattern(values: number[]): string | undefined {
+  const finiteValues = values.filter(value => Number.isFinite(value) && value > 0);
+  if (finiteValues.length === 0) {
+    return undefined;
+  }
+
+  return finiteValues.map(value => Number(value.toFixed(2)).toString()).join(" ");
 }
 
 /**

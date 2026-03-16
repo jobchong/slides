@@ -39,7 +39,7 @@ export interface TextRun {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
-  color?: string;        // hex color
+  color?: string;        // CSS color
 }
 
 export interface BulletStyle {
@@ -77,9 +77,10 @@ export interface ImageData {
 // Shape data
 export interface ShapeData {
   shapeType: string;     // rect, ellipse, line, roundRect, etc.
-  fill?: string;         // hex color or "none"
-  stroke?: string;       // hex color
+  fill?: string;         // CSS color or "none"
+  stroke?: string;       // CSS color
   strokeWidth?: number;  // points
+  strokeDasharray?: string;
   lineCap?: "round" | "square" | "flat";
   lineHead?: "oval" | "none";
   lineTail?: "oval" | "none";

@@ -126,8 +126,9 @@ function applyColorModifiers(color: string, xml: string): string {
   const tintMatch = xml.match(/<a:tint val="(\d+)"/);
   const shadeMatch = xml.match(/<a:shade val="(\d+)"/);
   const alphaMatch = xml.match(/<a:alpha val="(\d+)"/);
+  const alpha = alphaMatch ? Math.max(0, Math.min(1, parseInt(alphaMatch[1], 10) / 100000)) : null;
 
-  if (!lumModMatch && !lumOffMatch && !tintMatch && !shadeMatch) {
+  if (!lumModMatch && !lumOffMatch && !tintMatch && !shadeMatch && alpha === null) {
     return color;
   }
 
@@ -168,6 +169,9 @@ function applyColorModifiers(color: string, xml: string): string {
 
   // Convert back to RGB
   const [newR, newG, newB] = hslToRgb(h, s, l);
+  if (alpha !== null && alpha < 1) {
+    return `rgba(${newR}, ${newG}, ${newB}, ${Number(alpha.toFixed(3))})`;
+  }
 
   return `#${newR.toString(16).padStart(2, "0")}${newG.toString(16).padStart(2, "0")}${newB.toString(16).padStart(2, "0")}`;
 }

@@ -145,4 +145,38 @@ describe("PPTX preset shape import", () => {
     expect(rendered).toContain('x1="100"');
     expect(rendered).toContain('x2="0"');
   });
+
+  test("preserves fill alpha from imported shapes", async () => {
+    const pptxPath = join(pptxDir, "test3.pptx");
+    const { extractedSlide, theme, slideRels } = await loadSlide(pptxPath, 0);
+    const source = buildSlideSource(extractedSlide, theme, slideRels);
+
+    const translucentShape = source.elements.find((el) => el.type === "shape" && el.shape?.fill === "rgba(255, 255, 255, 0.5)");
+    expect(translucentShape).toBeDefined();
+
+    const rendered = renderSlideHtml({
+      background: { type: "none" },
+      elements: [translucentShape!],
+      import: { slideIndex: 0 },
+    });
+
+    expect(rendered).toContain("rgba(255, 255, 255, 0.5)");
+  });
+
+  test("preserves custom dash patterns from imported strokes", async () => {
+    const pptxPath = join(pptxDir, "fullTemplate1.pptx");
+    const { extractedSlide, theme, slideRels } = await loadSlide(pptxPath, 11);
+    const source = buildSlideSource(extractedSlide, theme, slideRels);
+
+    const dashedShape = source.elements.find((el) => el.type === "shape" && el.shape?.strokeDasharray === "11.3 3.82");
+    expect(dashedShape).toBeDefined();
+
+    const rendered = renderSlideHtml({
+      background: { type: "none" },
+      elements: [dashedShape!],
+      import: { slideIndex: 11 },
+    });
+
+    expect(rendered).toContain('stroke-dasharray="11.3 3.82"');
+  });
 });

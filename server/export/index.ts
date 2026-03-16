@@ -4,7 +4,7 @@ import { imageSize } from "image-size";
 import type { Slide, SlideSource } from "../../app/src/types";
 import type { EditableElement } from "../import/types";
 import { renderHtmlToPng } from "./html-to-image";
-import { boundsToInches, fontSizePxToPt, normalizeColor, WIDE_SLIDE_INCHES } from "./utils";
+import { boundsToInches, fontSizePxToPt, normalizeColorInfo, WIDE_SLIDE_INCHES } from "./utils";
 
 const SLIDE_PIXEL_SIZE = { width: 1280, height: 720 };
 
@@ -54,7 +54,10 @@ function buildGradientSvg(angle: number, stops: { position: number; color: strin
 async function addSlideBackground(slide: PptxGenJS.Slide, source: SlideSource, baseUrl: string) {
   const background = source.background;
   if (background.type === "solid") {
-    slide.background = { color: normalizeColor(background.color) };
+    const fill = normalizeColorInfo(background.color);
+    if (fill.color) {
+      slide.background = { color: fill.color, transparency: fill.transparency };
+    }
     return;
   }
 
@@ -94,6 +97,11 @@ async function addEditableElement(
   const bounds = boundsToInches(element.bounds);
 
   if (element.type === "text" && element.text) {
+    const textColor = normalizeColorInfo(element.text.style.color);
+    const textFill = element.shape?.fill && element.shape.fill !== "none"
+      ? normalizeColorInfo(element.shape.fill)
+      : {};
+    const textLine = element.shape?.stroke ? normalizeColorInfo(element.shape.stroke) : {};
     slide.addText(element.text.content, {
       x: bounds.x,
       y: bounds.y,
@@ -103,11 +111,14 @@ async function addEditableElement(
       fontSize: fontSizePxToPt(element.text.style.fontSize),
       bold: element.text.style.fontWeight === "bold",
       italic: element.text.style.fontStyle === "italic",
-      color: normalizeColor(element.text.style.color),
+      color: textColor.color,
+      transparency: textColor.transparency,
       align: element.text.style.align,
       valign: element.text.style.verticalAlign,
-      fill: element.shape?.fill && element.shape.fill !== "none" ? { color: normalizeColor(element.shape.fill) } : undefined,
-      line: element.shape?.stroke ? { color: normalizeColor(element.shape.stroke), width: element.shape.strokeWidth } : undefined,
+      fill: textFill.color ? { color: textFill.color, transparency: textFill.transparency } : undefined,
+      line: textLine.color
+        ? { color: textLine.color, transparency: textLine.transparency, width: element.shape?.strokeWidth }
+        : undefined,
       rotate: element.rotation ? element.rotation : undefined,
     });
     return;
@@ -115,9 +126,10 @@ async function addEditableElement(
 
   if (element.type === "shape" && element.shape) {
     if (element.shape.kind === "custom" && element.shape.svgPath && element.shape.svgViewBox) {
+      const dashAttr = element.shape.strokeDasharray ? ` stroke-dasharray="${element.shape.strokeDasharray}"` : "";
       const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${element.shape.svgViewBox.width}" height="${element.shape.svgViewBox.height}" viewBox="0 0 ${element.shape.svgViewBox.width} ${element.shape.svgViewBox.height}">
-  <path d="${element.shape.svgPath}" fill="${element.shape.fill || "none"}" stroke="${element.shape.stroke || "none"}" stroke-width="${element.shape.strokeWidth || 1}" />
+  <path d="${element.shape.svgPath}" fill="${element.shape.fill || "none"}" stroke="${element.shape.stroke || "none"}" stroke-width="${element.shape.strokeWidth || 1}"${dashAttr} />
 </svg>`;
       slide.addImage({ data: svgToDataUrl(svg), x: bounds.x, y: bounds.y, w: bounds.w, h: bounds.h, rotate: element.rotation ?? 0 });
       return;
@@ -132,15 +144,20 @@ async function addEditableElement(
             ? pptx.ShapeType.line
             : pptx.ShapeType.rect;
 
+    const fill = element.shape.fill && element.shape.fill !== "none"
+      ? normalizeColorInfo(element.shape.fill)
+      : {};
+    const line = element.shape.stroke ? normalizeColorInfo(element.shape.stroke) : {};
     const options: PptxGenJS.ShapeProps = {
       x: bounds.x,
       y: bounds.y,
       w: bounds.w,
       h: bounds.h,
-      fill: element.shape.fill && element.shape.fill !== "none" ? { color: normalizeColor(element.shape.fill) } : undefined,
-      line: element.shape.stroke
+      fill: fill.color ? { color: fill.color, transparency: fill.transparency } : undefined,
+      line: line.color
         ? {
-            color: normalizeColor(element.shape.stroke),
+            color: line.color,
+            transparency: line.transparency,
             width: element.shape.strokeWidth,
             dashType: element.shape.strokeDasharray ? "dash" : undefined,
             beginArrowType: element.shape.lineHead === "oval" ? "oval" : element.shape.lineHead === "none" ? "none" : undefined,

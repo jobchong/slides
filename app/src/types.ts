@@ -14,7 +14,7 @@ export interface Bounds {
 // Gradient stop for backgrounds
 export interface GradientStop {
   position: number;  // 0-100
-  color: string;     // hex
+  color: string;     // CSS color
 }
 
 // Background types
@@ -31,7 +31,7 @@ export interface TextStyle {
   fontSize: number;           // px
   fontWeight: "normal" | "bold";
   fontStyle: "normal" | "italic";
-  color: string;              // hex
+  color: string;              // CSS color
   align: "left" | "center" | "right";
   verticalAlign: "top" | "middle" | "bottom";
 }
