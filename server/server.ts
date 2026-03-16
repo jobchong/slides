@@ -7,14 +7,14 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { transcribeAudio } from "./groq";
-import { generateSlide, generateSlideStream, getDefaultModel, selectModel, parseModelOutput } from "./llm";
-import { layoutDiagram } from "./layout";
+import { generateSlide, generateSlideStream, getDefaultModel, selectModel } from "./llm";
 import { importPptx } from "./import";
 import { buildGatewayUrl, buildS3PublicUploadUrl, buildStoredImageUrl } from "./gateway";
 import type { ImportOptions } from "./import/types";
 import { logError, logInfo, logWarn, preview } from "./logger";
 import { createDefaultDeckStore } from "./deck-store";
 import { exportDeckToPptx, InvalidExportAssetUrlError } from "./export";
+import { resolveModelOutput } from "./model-output";
 import { rateLimiter, isRateLimitedEndpoint } from "./rate-limit";
 import type { DeckState, Message, Slide } from "../app/src/types";
 
@@ -435,17 +435,11 @@ async function handleGenerateStream(req: Request): Promise<Response> {
           }
 
           // After streaming completes, check if it's a diagram
-          const parsed = parseModelOutput(accumulated);
+          const resolved = resolveModelOutput(accumulated);
 
-          if (parsed.type === "diagram") {
-            // Process diagram through layout engine
-            const { html } = layoutDiagram(parsed.intent);
-            logInfo("Diagram processed", {
-              nodeCount: parsed.intent.nodes.length,
-              layout: parsed.intent.layout.type,
-            });
+          if (resolved.type === "diagram") {
             // Send the rendered HTML as a single chunk
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify(html)}\n\n`));
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(resolved.html)}\n\n`));
           } else if (accumulated.includes("<diagram>")) {
             // We buffered diagram content but parsing failed - send raw
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(accumulated)}\n\n`));
@@ -460,7 +454,7 @@ async function handleGenerateStream(req: Request): Promise<Response> {
             model: selectedModel,
             totalLength,
             durationMs,
-            outputType: parsed.type,
+            outputType: resolved.type,
           });
         } catch (error) {
           const errorMessage =
@@ -584,19 +578,21 @@ async function handleVoiceMessage(req: Request): Promise<Response> {
 
     // Generate slide with the selected model
     generationStart = Date.now();
-    const slideHtml = await generateSlide(updatedMessages, currentHtml, selectedModel);
+    const rawOutput = await generateSlide(updatedMessages, currentHtml, selectedModel);
+    const resolved = resolveModelOutput(rawOutput);
     const durationMs = Date.now() - generationStart;
 
     logInfo("Voice message response produced", {
       model: selectedModel,
       transcription: preview(transcription),
-      htmlLength: slideHtml?.length ?? 0,
-      htmlPreview: preview(slideHtml),
+      outputType: resolved.type,
+      htmlLength: resolved.html?.length ?? 0,
+      htmlPreview: preview(resolved.html),
       durationMs,
     });
 
     return jsonResponse({
-      html: slideHtml,
+      html: resolved.html,
       transcription,
     });
   } catch (error) {
