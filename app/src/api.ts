@@ -291,6 +291,9 @@ export async function importPptx(
         }
         try {
           const parsed = JSON.parse(data) as ImportProgress;
+          if (parsed.type === "error") {
+            throw new Error(parsed.error || "Import failed");
+          }
           if (parsed.type === "slide" && parsed.html !== undefined) {
             onSlide({
               id: crypto.randomUUID(),
