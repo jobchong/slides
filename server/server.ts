@@ -14,7 +14,7 @@ import { buildGatewayUrl, buildS3PublicUploadUrl, buildStoredImageUrl } from "./
 import type { ImportOptions } from "./import/types";
 import { logError, logInfo, logWarn, preview } from "./logger";
 import { createDefaultDeckStore } from "./deck-store";
-import { exportDeckToPptx } from "./export";
+import { exportDeckToPptx, InvalidExportAssetUrlError } from "./export";
 import { rateLimiter, isRateLimitedEndpoint } from "./rate-limit";
 import type { DeckState, Message, Slide } from "../app/src/types";
 
@@ -364,8 +364,14 @@ async function handleExport(req: Request): Promise<Response> {
       return jsonResponse({ error: "No slides to export." }, 400);
     }
 
-    const baseUrl = new URL(req.url).origin;
-    const pptx = await exportDeckToPptx(slides, baseUrl);
+    const requestBaseUrl = new URL(req.url).origin;
+    const gatewayBaseUrl = process.env.INTERNAL_BASE_URL || `http://127.0.0.1:${port}`;
+    const pptx = await exportDeckToPptx(slides, {
+      gatewayBaseUrl,
+      requestBaseUrl,
+      publicBaseUrl: process.env.PUBLIC_BASE_URL,
+      s3PublicBaseUrl: process.env.S3_PUBLIC_BASE_URL,
+    });
     return new Response(pptx, {
       status: 200,
       headers: {
@@ -375,7 +381,8 @@ async function handleExport(req: Request): Promise<Response> {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to export slides.";
-    return jsonResponse({ error: message }, 500);
+    const status = error instanceof InvalidExportAssetUrlError ? 400 : 500;
+    return jsonResponse({ error: message }, status);
   }
 }
 

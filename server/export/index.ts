@@ -11,6 +11,21 @@ import { boundsToInches, fontSizePxToPt, normalizeColorInfo, WIDE_SLIDE_INCHES }
 const EMU_PER_INCH = 914400;
 const SLIDE_PIXEL_SIZE = { width: 1280, height: 720 };
 const EXPORT_OBJECT_PREFIX = "slideai-";
+const SAFE_UPLOAD_FILENAME_PATTERN = /^[A-Za-z0-9._-]+$/;
+
+export type ExportAssetUrlOptions = {
+  gatewayBaseUrl: string;
+  requestBaseUrl?: string;
+  publicBaseUrl?: string | null;
+  s3PublicBaseUrl?: string | null;
+};
+
+export class InvalidExportAssetUrlError extends Error {
+  constructor(url: string) {
+    super(`Unsupported export asset URL: ${url}`);
+    this.name = "InvalidExportAssetUrlError";
+  }
+}
 
 type DashPatch = {
   slideIndex: number;
@@ -27,9 +42,92 @@ type SlideObjectWithText = {
   text?: string | number | PptxGenJS.TextProps[] | null;
 };
 
-async function imageUrlToData(url: string, baseUrl: string): Promise<string> {
+function normalizeBaseUrl(value?: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(value);
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString().replace(/\/$/, "");
+  } catch {
+    return null;
+  }
+}
+
+function extractFilenameUnderBase(url: URL, baseUrl: string): string | null {
+  if (url.search || url.hash) {
+    return null;
+  }
+
+  const parsedBase = new URL(baseUrl);
+  const basePath = parsedBase.pathname.replace(/\/$/, "");
+  const expectedPrefix = `${basePath || ""}/`;
+  if (url.origin !== parsedBase.origin || !url.pathname.startsWith(expectedPrefix)) {
+    return null;
+  }
+
+  const filename = url.pathname.slice(expectedPrefix.length);
+  if (!SAFE_UPLOAD_FILENAME_PATTERN.test(filename)) {
+    return null;
+  }
+
+  return filename;
+}
+
+function resolveExportAssetUrl(url: string, options: ExportAssetUrlOptions): string {
+  if (url.startsWith("data:")) {
+    return url;
+  }
+
+  const gatewayBaseUrl = normalizeBaseUrl(options.gatewayBaseUrl);
+  if (!gatewayBaseUrl) {
+    throw new Error("Export gateway base URL must be an absolute URL.");
+  }
+
+  if (url.startsWith("/")) {
+    const filename = extractFilenameUnderBase(new URL(url, gatewayBaseUrl), `${gatewayBaseUrl}/images`);
+    if (!filename) {
+      throw new InvalidExportAssetUrlError(url);
+    }
+    return `${gatewayBaseUrl}/images/${filename}`;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new InvalidExportAssetUrlError(url);
+  }
+
+  const allowedGatewayBases = [
+    normalizeBaseUrl(options.requestBaseUrl),
+    normalizeBaseUrl(options.publicBaseUrl),
+  ].filter((value): value is string => Boolean(value));
+
+  for (const base of allowedGatewayBases) {
+    const filename = extractFilenameUnderBase(parsed, `${base}/images`);
+    if (filename) {
+      return `${gatewayBaseUrl}/images/${filename}`;
+    }
+  }
+
+  const s3PublicBaseUrl = normalizeBaseUrl(options.s3PublicBaseUrl);
+  if (s3PublicBaseUrl) {
+    const filename = extractFilenameUnderBase(parsed, s3PublicBaseUrl);
+    if (filename) {
+      return `${s3PublicBaseUrl}/${filename}`;
+    }
+  }
+
+  throw new InvalidExportAssetUrlError(url);
+}
+
+async function imageUrlToData(url: string, options: ExportAssetUrlOptions): Promise<string> {
   if (url.startsWith("data:")) return url;
-  const resolved = url.startsWith("/") ? `${baseUrl}${url}` : url;
+  const resolved = resolveExportAssetUrl(url, options);
   const response = await fetch(resolved);
   if (!response.ok) {
     throw new Error(`Failed to fetch image: ${response.status}`);
@@ -70,7 +168,11 @@ function buildGradientSvg(angle: number, stops: { position: number; color: strin
 </svg>`;
 }
 
-async function addSlideBackground(slide: PptxGenJS.Slide, source: SlideSource, baseUrl: string) {
+async function addSlideBackground(
+  slide: PptxGenJS.Slide,
+  source: SlideSource,
+  assetUrlOptions: ExportAssetUrlOptions
+) {
   const background = source.background;
   if (background.type === "solid") {
     const fill = normalizeColorInfo(background.color);
@@ -87,7 +189,7 @@ async function addSlideBackground(slide: PptxGenJS.Slide, source: SlideSource, b
   }
 
   if (background.type === "image" || background.type === "rasterized") {
-    const data = await imageUrlToData(background.url, baseUrl);
+    const data = await imageUrlToData(background.url, assetUrlOptions);
     await addBackgroundImage(slide, data);
   }
 }
@@ -458,7 +560,7 @@ async function addEditableElement(
   pptx: PptxGenJS,
   slide: PptxGenJS.Slide,
   element: EditableElement,
-  baseUrl: string,
+  assetUrlOptions: ExportAssetUrlOptions,
   slideIndex: number,
   dashPatches: DashPatch[]
 ) {
@@ -514,7 +616,7 @@ async function addEditableElement(
   }
 
   if (element.type === "image" && element.image) {
-    const data = await imageUrlToData(element.image.url, baseUrl);
+    const data = await imageUrlToData(element.image.url, assetUrlOptions);
     if (element.image.objectFit === "contain") {
       const buffer = Buffer.from(data.split(",")[1] || "", "base64");
       const dimensions = imageSize(buffer);
@@ -610,10 +712,29 @@ async function renderHtmlSlide(html: string): Promise<string> {
   return `data:image/png;base64,${buffer.toString("base64")}`;
 }
 
-export async function exportDeckToPptx(slides: Slide[], baseUrl: string): Promise<Uint8Array> {
+export async function exportDeckToPptx(
+  slides: Slide[],
+  assetUrlOptionsOrBaseUrl: string | ExportAssetUrlOptions
+): Promise<Uint8Array> {
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_WIDE";
   const dashPatches: DashPatch[] = [];
+  const assetUrlOptions: ExportAssetUrlOptions =
+    typeof assetUrlOptionsOrBaseUrl === "string"
+      ? {
+          gatewayBaseUrl: assetUrlOptionsOrBaseUrl,
+          requestBaseUrl: assetUrlOptionsOrBaseUrl,
+          publicBaseUrl: process.env.PUBLIC_BASE_URL,
+          s3PublicBaseUrl: process.env.S3_PUBLIC_BASE_URL,
+        }
+      : {
+          ...assetUrlOptionsOrBaseUrl,
+          requestBaseUrl:
+            assetUrlOptionsOrBaseUrl.requestBaseUrl ?? assetUrlOptionsOrBaseUrl.gatewayBaseUrl,
+          publicBaseUrl: assetUrlOptionsOrBaseUrl.publicBaseUrl ?? process.env.PUBLIC_BASE_URL,
+          s3PublicBaseUrl:
+            assetUrlOptionsOrBaseUrl.s3PublicBaseUrl ?? process.env.S3_PUBLIC_BASE_URL,
+        };
 
   for (const [slideIndex, slide] of slides.entries()) {
     const pptxSlide = pptx.addSlide();
@@ -624,7 +745,7 @@ export async function exportDeckToPptx(slides: Slide[], baseUrl: string): Promis
       continue;
     }
 
-    await addSlideBackground(pptxSlide, slide.source, baseUrl);
+    await addSlideBackground(pptxSlide, slide.source, assetUrlOptions);
 
     const sorted = [...slide.source.elements].sort((a, b) => a.zIndex - b.zIndex);
     for (const element of sorted) {
@@ -632,7 +753,7 @@ export async function exportDeckToPptx(slides: Slide[], baseUrl: string): Promis
         pptx,
         pptxSlide,
         element as EditableElement,
-        baseUrl,
+        assetUrlOptions,
         slideIndex,
         dashPatches
       );
