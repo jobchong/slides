@@ -21,6 +21,7 @@ import type {
 import { EMU_PER_POINT } from "./types";
 import { resolveColor } from "./theme";
 import { buildPresetShapeGeometry, parsePresetAdjustments } from "./shape-geometry";
+import { buildPresetDashPattern, formatDashPattern, parsePositivePercentage } from "../pptx-dash";
 
 // Default slide size (10" x 7.5" in EMU)
 const DEFAULT_SLIDE_SIZE: SlideSize = {
@@ -824,14 +825,20 @@ function parseStrokeDasharray(lnXml: string, strokeWidthPx: number): string | un
 }
 
 function parseCustomDashPattern(lnXml: string, strokeWidthPx: number): string | undefined {
-  const dashStopRegex = /<a:ds[^>]*d="([^"]+)"[^>]*sp="([^"]+)"/g;
+  const dashStopRegex = /<a:ds\b([^>]*)\/?>/g;
   const values: number[] = [];
   let match: RegExpExecArray | null;
 
   while ((match = dashStopRegex.exec(lnXml)) !== null) {
+    const dashLength = readXmlAttribute(match[1], "d");
+    const gapLength = readXmlAttribute(match[1], "sp");
+    if (!dashLength || !gapLength) {
+      continue;
+    }
+
     values.push(
-      parsePositivePercentage(match[1]) * strokeWidthPx,
-      parsePositivePercentage(match[2]) * strokeWidthPx
+      parsePositivePercentage(dashLength) * strokeWidthPx,
+      parsePositivePercentage(gapLength) * strokeWidthPx
     );
   }
 
@@ -842,43 +849,9 @@ function parseCustomDashPattern(lnXml: string, strokeWidthPx: number): string | 
   return formatDashPattern(values);
 }
 
-function buildPresetDashPattern(name: string, strokeWidthPx: number): string | undefined {
-  const ratios: Record<string, number[]> = {
-    dot: [1, 1],
-    dash: [3, 1],
-    lgDash: [8, 3],
-    dashDot: [3, 1, 1, 1],
-    lgDashDot: [8, 3, 1, 3],
-    lgDashDotDot: [8, 3, 1, 3, 1, 3],
-    sysDot: [1, 1],
-    sysDash: [3, 1],
-    sysDashDot: [3, 1, 1, 1],
-    sysDashDotDot: [3, 1, 1, 1, 1, 1],
-  };
-
-  const pattern = ratios[name];
-  if (!pattern) {
-    return undefined;
-  }
-
-  return formatDashPattern(pattern.map(value => value * strokeWidthPx));
-}
-
-function parsePositivePercentage(value: string): number {
-  const trimmed = value.trim();
-  if (trimmed.endsWith("%")) {
-    return parseFloat(trimmed) / 100;
-  }
-  return parseFloat(trimmed) / 100000;
-}
-
-function formatDashPattern(values: number[]): string | undefined {
-  const finiteValues = values.filter(value => Number.isFinite(value) && value > 0);
-  if (finiteValues.length === 0) {
-    return undefined;
-  }
-
-  return finiteValues.map(value => Number(value.toFixed(2)).toString()).join(" ");
+function readXmlAttribute(xml: string, attribute: string): string | undefined {
+  const match = xml.match(new RegExp(`\\b${attribute}=(["'])(.*?)\\1`));
+  return match?.[2];
 }
 
 /**

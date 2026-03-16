@@ -109,6 +109,21 @@ async function buildSlidesFromPptx(pptxPath: string): Promise<{ slides: Slide[];
   return { slides, html };
 }
 
+async function exportAndReimportSlides(slides: Slide[], fileName: string): Promise<Slide[]> {
+  const exported = await exportDeckToPptx(slides, "http://localhost:4000");
+
+  const tempDir = await mkdtemp(join(tmpdir(), "slideai-roundtrip-"));
+  const outputPath = join(tempDir, fileName);
+  await writeFile(outputPath, exported);
+
+  try {
+    const roundTrip = await buildSlidesFromPptx(outputPath);
+    return roundTrip.slides;
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
 const pptxFiles = ["test1.pptx", "test2.pptx", "test3.pptx"];
 
 function round(value: number, precision = 4): number {
@@ -226,4 +241,122 @@ describe("PPTX round-trip fidelity", () => {
     { timeout: 60000 }
     );
   }
+});
+
+describe("PPTX round-trip regressions", () => {
+  test("preserves primitive custom dash patterns through export", async () => {
+    const slides: Slide[] = [
+      {
+        id: "slide-0",
+        html: "",
+        source: {
+          background: { type: "none" },
+          elements: [
+            {
+              id: "shape-0",
+              type: "shape",
+              bounds: { x: 10, y: 10, width: 30, height: 20 },
+              zIndex: 0,
+              shape: {
+                kind: "rect",
+                fill: "none",
+                stroke: "#112233",
+                strokeWidth: 2,
+                strokeDasharray: "4 2 1 2",
+              },
+            },
+          ],
+          import: { slideIndex: 0 },
+        },
+      },
+    ];
+
+    const roundTripSlides = await exportAndReimportSlides(slides, "roundtrip-custom-dash.pptx");
+    const roundTripShape = roundTripSlides[0].source?.elements.find((el) => el.type === "shape");
+
+    expect(roundTripShape?.shape?.strokeDasharray).toBe("4 2 1 2");
+  });
+
+  test("preserves preset primitive dash patterns through export", async () => {
+    const slides: Slide[] = [
+      {
+        id: "slide-0",
+        html: "",
+        source: {
+          background: { type: "none" },
+          elements: [
+            {
+              id: "shape-1",
+              type: "shape",
+              bounds: { x: 10, y: 10, width: 30, height: 20 },
+              zIndex: 0,
+              shape: {
+                kind: "ellipse",
+                fill: "none",
+                stroke: "#445566",
+                strokeWidth: 2,
+                strokeDasharray: "8 2.67 2.67 2.67",
+              },
+            },
+          ],
+          import: { slideIndex: 0 },
+        },
+      },
+    ];
+
+    const roundTripSlides = await exportAndReimportSlides(slides, "roundtrip-preset-dash.pptx");
+    const roundTripShape = roundTripSlides[0].source?.elements.find((el) => el.type === "shape");
+
+    expect(roundTripShape?.shape?.strokeDasharray).toBe("8 2.67 2.67 2.67");
+  });
+
+  test("preserves custom geometry on text-backed shapes through export", async () => {
+    const slides: Slide[] = [
+      {
+        id: "slide-0",
+        html: "",
+        source: {
+          background: { type: "none" },
+          elements: [
+            {
+              id: "text-0",
+              type: "text",
+              bounds: { x: 15, y: 20, width: 35, height: 15 },
+              zIndex: 0,
+              text: {
+                content: "Arrow label",
+                style: {
+                  fontFamily: "Arial",
+                  fontSize: 24,
+                  fontWeight: "bold",
+                  fontStyle: "normal",
+                  color: "#ffffff",
+                  align: "center",
+                  verticalAlign: "middle",
+                },
+              },
+              shape: {
+                kind: "custom",
+                fill: "#00AAFF",
+                stroke: "#005577",
+                strokeWidth: 1,
+                svgPath:
+                  "M 0 0 L 150 0 L 150 25 L 200 50 L 150 75 L 150 100 L 0 100 L 0 75 L 0 25 Z",
+                svgViewBox: { width: 200, height: 100 },
+              },
+            },
+          ],
+          import: { slideIndex: 0 },
+        },
+      },
+    ];
+
+    const roundTripSlides = await exportAndReimportSlides(slides, "roundtrip-shaped-text.pptx");
+    const roundTripText = roundTripSlides[0].source?.elements.find((el) => el.type === "text");
+
+    expect(roundTripText?.text?.content).toBe("Arrow label");
+    expect(roundTripText?.shape?.kind).toBe("custom");
+    expect(roundTripText?.shape?.svgPath).toBeDefined();
+    expect(roundTripText?.shape?.svgViewBox).toBeDefined();
+  });
 });

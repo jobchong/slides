@@ -12,7 +12,7 @@ test.describe("PPTX visual import", () => {
   test("renders imported PPTX slide consistently through the app import flow", async ({ page }) => {
     test.setTimeout(120000);
 
-    await page.goto("http://localhost:4000");
+    await page.goto("/");
     await expect(page.locator(".slide")).toBeVisible();
 
     const importDialog = page.getByRole("dialog", { name: "Importing Presentation" });

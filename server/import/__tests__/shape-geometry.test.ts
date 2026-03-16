@@ -270,3 +270,55 @@ describe("preset shape parser integration", () => {
     );
   });
 });
+
+describe("stroke parsing", () => {
+  test("parses custom dash stops regardless of XML attribute order", () => {
+    resetElementIdCounter();
+
+    const theme = getDefaultTheme();
+    const slideSize: SlideSize = { width: 1000, height: 1000 };
+    const slideXml = `
+      <p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+        <p:cSld>
+          <p:spTree>
+            <p:nvGrpSpPr>
+              <p:cNvPr id="0" name=""/>
+              <p:cNvGrpSpPr/>
+              <p:nvPr/>
+            </p:nvGrpSpPr>
+            <p:grpSpPr/>
+            <p:sp>
+              <p:nvSpPr>
+                <p:cNvPr id="3" name="Dashed Rectangle"/>
+                <p:cNvSpPr/>
+                <p:nvPr/>
+              </p:nvSpPr>
+              <p:spPr>
+                <a:xfrm>
+                  <a:off x="100" y="200"/>
+                  <a:ext cx="200" cy="100"/>
+                </a:xfrm>
+                <a:prstGeom prst="rect">
+                  <a:avLst/>
+                </a:prstGeom>
+                <a:ln w="12700">
+                  <a:solidFill>
+                    <a:srgbClr val="000000"/>
+                  </a:solidFill>
+                  <a:custDash>
+                    <a:ds sp="100000" d="200000"/>
+                  </a:custDash>
+                </a:ln>
+              </p:spPr>
+            </p:sp>
+          </p:spTree>
+        </p:cSld>
+      </p:sld>
+    `;
+
+    const extractedSlide = parseSlide(slideXml, 0, slideSize, theme, new Map());
+
+    expect(extractedSlide.elements).toHaveLength(1);
+    expect(extractedSlide.elements[0].shape?.strokeDasharray).toBe("2.67 1.33");
+  });
+});
