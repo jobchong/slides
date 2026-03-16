@@ -1,7 +1,8 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import type { Message, Slide } from "../types";
 import { callModelStream } from "../api";
 import { sanitizeHtml } from "../sanitize";
+import { classifyGenerationError, formatError } from "../errors";
 
 export interface UseChatGenerationOptions {
   slides: Slide[];
@@ -15,7 +16,9 @@ export interface UseChatGenerationOptions {
 export interface UseChatGenerationResult {
   isLoading: boolean;
   error: string | null;
+  errorRetryable: boolean;
   clearError: () => void;
+  retryLastMessage: () => void;
   handleSend: (userMessage: string) => Promise<void>;
   handleVoiceMessage: (
     transcription: string,
@@ -34,6 +37,8 @@ export function useChatGeneration({
 }: UseChatGenerationOptions): UseChatGenerationResult {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorRetryable, setErrorRetryable] = useState(false);
+  const lastMessageRef = useRef<string | null>(null);
 
   const updateCurrentSlideHtml = useCallback(
     (html: string) => {
@@ -60,6 +65,7 @@ export function useChatGeneration({
 
   const handleSend = useCallback(
     async (userMessage: string) => {
+      lastMessageRef.current = userMessage;
       const currentSlide = slides[currentSlideIndex];
       const originalHtml = currentSlide.html;
       const newMessages: Message[] = [
@@ -69,6 +75,7 @@ export function useChatGeneration({
       setMessages(newMessages);
       setIsLoading(true);
       setError(null);
+      setErrorRetryable(false);
 
       try {
         let hasStreamedHtml = false;
@@ -95,8 +102,11 @@ export function useChatGeneration({
           commitCurrentSlideHtml(result.html);
           setMessages([...newMessages, { role: "assistant", content: "Done." }]);
         }
+        lastMessageRef.current = null;
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Unknown error");
+        const appError = classifyGenerationError(err);
+        setError(formatError(appError));
+        setErrorRetryable(appError.retryable);
       } finally {
         setIsLoading(false);
       }
@@ -134,12 +144,23 @@ export function useChatGeneration({
 
   const clearError = useCallback(() => {
     setError(null);
+    setErrorRetryable(false);
   }, []);
+
+  const retryLastMessage = useCallback(() => {
+    if (lastMessageRef.current) {
+      // Remove the failed user message before retrying
+      setMessages((prev) => prev.slice(0, -1));
+      handleSend(lastMessageRef.current);
+    }
+  }, [handleSend, setMessages]);
 
   return {
     isLoading,
     error,
+    errorRetryable,
     clearError,
+    retryLastMessage,
     handleSend,
     handleVoiceMessage,
   };

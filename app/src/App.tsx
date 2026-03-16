@@ -68,7 +68,9 @@ export default function App() {
   const {
     isLoading,
     error,
+    errorRetryable,
     clearError,
+    retryLastMessage,
     handleSend,
     handleVoiceMessage,
   } = useChatGeneration({
@@ -137,10 +139,12 @@ export default function App() {
 
   // Combined error from chat or import/export
   const displayError = error || importExportError;
+  const displayErrorRetryable = error ? errorRetryable : false;
   const handleErrorDismiss = () => {
     clearError();
     clearImportExportError();
   };
+  const handleErrorRetry = error ? retryLastMessage : undefined;
 
   return (
     <div className="app">
@@ -216,7 +220,9 @@ export default function App() {
             model={model}
             onModelChange={setModel}
             error={displayError}
+            errorRetryable={displayErrorRetryable}
             onErrorDismiss={handleErrorDismiss}
+            onErrorRetry={handleErrorRetry}
           />
         </div>
       </main>

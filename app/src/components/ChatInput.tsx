@@ -1,10 +1,11 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import type { ChangeEvent } from "react";
 import type { Message } from "../types";
 import { uploadImage } from "../uploads";
 import { useAudioRecorder } from "../hooks/useAudioRecorder";
 import { sendVoiceMessage } from "../api";
 import { MODEL_OPTIONS } from "../models";
+import { classifyUploadError, formatError } from "../errors";
 import "./ChatInput.css";
 
 interface ChatInputProps {
@@ -16,17 +17,21 @@ interface ChatInputProps {
   model: string;
   onModelChange: (model: string) => void;
   error: string | null;
+  errorRetryable?: boolean;
   onErrorDismiss: () => void;
+  onErrorRetry?: () => void;
 }
 
 type UploadStatus = "idle" | "uploading" | "done" | "error";
 
 interface UploadItem {
   id: string;
+  file: File;
   name: string;
   status: UploadStatus;
   url?: string;
   error?: string;
+  retryable?: boolean;
 }
 
 export function ChatInput({
@@ -38,7 +43,9 @@ export function ChatInput({
   model,
   onModelChange,
   error,
+  errorRetryable,
   onErrorDismiss,
+  onErrorRetry,
 }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [isExpanded, setIsExpanded] = useState(false);
@@ -144,12 +151,12 @@ export function ChatInput({
     handleUploadClick();
   };
 
-  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const id = crypto.randomUUID();
-    setUploads((prev) => [...prev, { id, name: file.name, status: "uploading" }]);
+  const uploadFile = useCallback(async (file: File, id: string) => {
+    setUploads((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, status: "uploading", error: undefined } : item
+      )
+    );
 
     try {
       const result = await uploadImage(file);
@@ -159,17 +166,33 @@ export function ChatInput({
         )
       );
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Upload failed. Please try again.";
+      const appError = classifyUploadError(err, file);
       setUploads((prev) =>
         prev.map((item) =>
-          item.id === id ? { ...item, status: "error", error: message } : item
+          item.id === id
+            ? { ...item, status: "error", error: formatError(appError), retryable: appError.retryable }
+            : item
         )
       );
-    } finally {
-      event.target.value = "";
     }
+  }, []);
+
+  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const id = crypto.randomUUID();
+    setUploads((prev) => [...prev, { id, file, name: file.name, status: "uploading" }]);
+    await uploadFile(file, id);
+    event.target.value = "";
   };
+
+  const handleRetryUpload = useCallback((id: string) => {
+    const upload = uploads.find((u) => u.id === id);
+    if (upload?.file) {
+      uploadFile(upload.file, id);
+    }
+  }, [uploads, uploadFile]);
 
   const handleRemoveAttachment = (id: string) => {
     setUploads((prev) => prev.filter((item) => item.id !== id));
@@ -391,7 +414,25 @@ export function ChatInput({
                         <span key={upload.id} className="chat-upload-inline-item">
                           {upload.name} {upload.status === "uploading" ? "· Uploading…" : ""}
                           {upload.status === "error" && (
-                            <span className="chat-upload-inline-error"> · {upload.error}</span>
+                            <>
+                              <span className="chat-upload-inline-error"> · {upload.error}</span>
+                              {upload.retryable && (
+                                <button
+                                  type="button"
+                                  className="chat-upload-retry"
+                                  onClick={() => handleRetryUpload(upload.id)}
+                                >
+                                  Retry
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className="chat-upload-dismiss"
+                                onClick={() => handleRemoveAttachment(upload.id)}
+                              >
+                                Dismiss
+                              </button>
+                            </>
                           )}
                         </span>
                       ))}
@@ -459,14 +500,25 @@ export function ChatInput({
       )}
       {error && (
         <div className="chat-generate-error">
-          <span>{error}</span>
-          <button
-            type="button"
-            className="chat-error-dismiss"
-            onClick={onErrorDismiss}
-          >
-            Dismiss
-          </button>
+          <span className="chat-error-message">{error}</span>
+          <div className="chat-error-actions">
+            {errorRetryable && onErrorRetry && (
+              <button
+                type="button"
+                className="chat-error-retry"
+                onClick={onErrorRetry}
+              >
+                Try again
+              </button>
+            )}
+            <button
+              type="button"
+              className="chat-error-dismiss"
+              onClick={onErrorDismiss}
+            >
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
     </div>
